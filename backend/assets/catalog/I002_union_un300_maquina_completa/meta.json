@@ -1,0 +1,42 @@
+{
+  "image_id": "I002",
+  "title": "Máquina de coser familiar UNION UN300",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "familiar",
+  "brand": "UNION",
+  "model": "UN300",
+  "represents": "maquina_completa",
+  "key_features": [
+    "Máquina de coser familiar",
+    "Diseño compacto",
+    "Controles mecánicos frontales"
+  ],
+  "benefits": [
+    "Ideal para uso doméstico",
+    "Fácil de operar",
+    "Apta para proyectos de costura básicos"
+  ],
+  "use_cases": [
+    "Costura en el hogar",
+    "Arreglos de ropa",
+    "Emprendimientos pequeños desde casa"
+  ],
+  "send_when_customer_says": [
+    "máquina de coser familiar",
+    "para la casa",
+    "arreglar ropa",
+    "empezar a coser",
+    "costura básica"
+  ],
+  "handoff_triggers": ["precio", "disponibilidad", "horario", "pago", "envio"],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Es una máquina familiar práctica para costura doméstica y arreglos.",
+    "qualifier": "¿La necesitas para uso en casa o para un pequeño emprendimiento?",
+    "closing": "Estamos en la calle 34 #1-30 en Montería y hacemos envíos a todo el país."
+  },
+  "language": "es-CO",
+  "priority": 6
+}
+

@@ -1,0 +1,67 @@
+{
+  "image_id": "I001",
+  "title": "Máquina plana mecatrónica SSGEMSY SG8802E",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "recta_industrial_mecatronica",
+  "brand": "SSGEMSY",
+  "model": "SG8802E",
+  "represents": "maquina_completa",
+  "key_features": [
+    "motor_bajo_consumo_70_ahorro",
+    "ajuste_velocidad_alta_baja",
+    "panel_operacion_facil",
+    "funcion_agregar_puntadas",
+    "posicionador_aguja",
+    "luz_led",
+    "seguridad_operador",
+    "display_led_digital",
+    "controles_digitales"
+  ],
+  "benefits": [
+    "ahorro_energia_70_porciento",
+    "operacion_sencilla",
+    "reduccion_fatiga_visual",
+    "seguridad_operador",
+    "precision_posicionamiento_aguja"
+  ],
+  "use_cases": [
+    "taller_confeccion",
+    "produccion_ropa",
+    "emprendimiento_textil",
+    "produccion_media",
+    "produccion_constante"
+  ],
+  "send_when_customer_says": [
+    "maquina plana mecatronica",
+    "ssgemsy",
+    "sg8802e",
+    "maquina con ahorro de energia",
+    "motor bajo consumo",
+    "ahorro 70 energia",
+    "maquina con panel digital",
+    "ajuste velocidad",
+    "agregar puntadas",
+    "posicionador aguja",
+    "luz led",
+    "maquina industrial moderna",
+    "recta mecatronica",
+    "maquina para taller"
+  ],
+  "handoff_triggers": [
+    "precio",
+    "disponibilidad",
+    "horario",
+    "pago",
+    "envio"
+  ],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Esta es la SSGEMSY SG8802E, una máquina plana mecatrónica con motor bajo consumo que ahorra hasta un 70% de energía. Tiene panel de operación fácil, ajuste de velocidad alta y baja, función para agregar puntadas, posicionador de aguja y luz LED para reducir fatiga visual.",
+    "qualifier": "¿La necesitas para taller de confección o para empezar un emprendimiento de ropa?",
+    "closing": "¿En qué ciudad te encuentras para confirmarte precio y disponibilidad?"
+  },
+  "language": "es-CO",
+  "priority": 8
+}
+

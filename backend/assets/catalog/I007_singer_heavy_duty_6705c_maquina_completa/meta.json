@@ -1,0 +1,63 @@
+{
+  "image_id": "I007",
+  "title": "Máquina de coser SINGER Heavy Duty 6705C",
+  "category": "familiar",
+  "brand": "SINGER",
+  "model": "Heavy Duty 6705C",
+  "represents": "maquina_completa",
+  "key_features": [
+    "200 puntadas incorporadas",
+    "7 estilos de ojal automático",
+    "Velocidad de hasta 1.100 puntadas por minuto",
+    "Estructura metálica reforzada para telas gruesas",
+    "Panel electrónico con pantalla LCD",
+    "Funciones automáticas de corte y remate",
+    "Presión ajustable del prensatelas",
+    "Amplio espacio de trabajo",
+    "Motor potente para materiales pesados"
+  ],
+  "benefits": [
+    "potencia_profesional",
+    "versatilidad_puntadas",
+    "durabilidad",
+    "pantalla_lcd",
+    "telas_gruesas"
+  ],
+  "use_cases": [
+    "costura_domestica_intensiva",
+    "proyectos_creativos",
+    "telas_gruesas",
+    "jeans_cuero",
+    "tapiceria_ligera",
+    "emprendimiento_pequeño"
+  ],
+  "send_when_customer_says": [
+    "singer heavy duty",
+    "heavy duty 6705",
+    "6705c",
+    "maquina potente",
+    "coser telas gruesas",
+    "coser jeans",
+    "coser cuero",
+    "muchas puntadas",
+    "ojales automaticos",
+    "pantalla lcd",
+    "maquina resistente",
+    "uso intensivo",
+    "semi profesional"
+  ],
+  "handoff_triggers": [
+    "precio",
+    "disponibilidad",
+    "garantía",
+    "envío"
+  ],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "La Singer Heavy Duty 6705C tiene 200 puntadas, pantalla LCD y estructura metálica reforzada. Es ideal para quienes cosen frecuentemente o trabajan con telas gruesas.",
+    "qualifier": "¿La necesitas para uso personal intensivo o para un pequeño emprendimiento?",
+    "closing": "Es una máquina semi-profesional perfecta para quien quiere calidad Singer con potencia industrial."
+  },
+  "priority": 9
+}
+

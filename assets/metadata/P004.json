@@ -1,0 +1,75 @@
+{
+  "post_id": "P004",
+  "title": "Máquina plana mecatrónica SSGEMSY SG8802E",
+  "platforms": ["facebook_marketplace", "instagram"],
+  "category": "recta_industrial_mecatronica",
+  "brand": "SSGEMSY",
+  "model": "SG8802E",
+  "use_cases": [
+    "ropa",
+    "confeccion",
+    "taller",
+    "emprendimiento",
+    "produccion_constante"
+  ],
+  "best_for": [
+    "taller_pequeno",
+    "produccion_media",
+    "emprendedores"
+  ],
+  "key_features": [
+    "motor_bajo_consumo",
+    "ajuste_velocidad",
+    "puntadas_programables",
+    "seguridad_operador",
+    "luz_led",
+    "posicionador_aguja"
+  ],
+  "benefits": [
+    "ahorro_energia_70",
+    "operacion_sencilla",
+    "menos_fatiga_visual",
+    "mayor_precision"
+  ],
+  "sales_angles": [
+    "ahorro_de_energia",
+    "facil_operacion",
+    "seguridad",
+    "ideal_para_emprender"
+  ],
+  "common_questions": [
+    "precio",
+    "incluye_mesa_y_motor",
+    "sirve_para_ropa",
+    "es_industrial",
+    "envios"
+  ],
+  "send_when_customer_says": [
+    "maquina plana",
+    "plana mecatronica",
+    "maquina industrial",
+    "emprendimiento de ropa",
+    "taller de confeccion",
+    "produccion constante",
+    "ahorro de energia"
+  ],
+  "handoff_triggers": [
+    "precio",
+    "disponibilidad",
+    "horario",
+    "pago",
+    "envio"
+  ],
+  "files": {
+    "preferred_image": "image_1.jpg"
+  },
+  "cta": {
+    "educational": "Esta es una recta industrial mecatrónica ideal para producción constante de ropa.",
+    "qualifier": "¿La necesitas para taller o para empezar un emprendimiento?",
+    "closing": "¿En qué ciudad te encuentras para confirmarte precio y disponibilidad?"
+  },
+  "priority": 9,
+  "created_from": "facebook_post",
+  "language": "es-CO"
+}
+

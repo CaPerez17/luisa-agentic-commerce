@@ -1,0 +1,150 @@
+{
+  "version": "1.1",
+  "generated_at": "2025-12-19T02:30:00.000000",
+  "total_items": 7,
+  "items": [
+    {
+      "image_id": "I007",
+      "slug": "singer_heavy_duty_6705c_maquina_completa",
+      "path": "catalog/I007_singer_heavy_duty_6705c_maquina_completa/",
+      "category": "familiar",
+      "brand": "SINGER",
+      "model": "Heavy Duty 6705C",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 9,
+      "send_when_customer_says": [
+        "singer heavy duty 6705",
+        "6705c",
+        "maquina potente",
+        "coser telas gruesas",
+        "coser jeans",
+        "coser cuero",
+        "muchas puntadas",
+        "200 puntadas",
+        "ojales automaticos",
+        "pantalla lcd",
+        "maquina resistente",
+        "uso intensivo",
+        "semi profesional"
+      ]
+    },
+    {
+      "image_id": "I001",
+      "slug": "ssgemsy_sg8802e_maquina_completa",
+      "path": "catalog/I001_ssgemsy_sg8802e_maquina_completa/",
+      "category": "recta_industrial_mecatronica",
+      "brand": "SSGEMSY",
+      "model": "SG8802E",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 8,
+      "send_when_customer_says": [
+        "maquina plana mecatronica",
+        "ssgemsy",
+        "sg8802e",
+        "maquina con ahorro de energia",
+        "motor bajo consumo",
+        "ahorro 70 energia",
+        "maquina con panel digital",
+        "ajuste velocidad",
+        "agregar puntadas",
+        "posicionador aguja",
+        "luz led",
+        "maquina industrial moderna",
+        "recta mecatronica",
+        "maquina para taller"
+      ]
+    },
+    {
+      "image_id": "I006",
+      "slug": "singer_heavy_duty_maquina_completa",
+      "path": "catalog/I006_singer_heavy_duty_maquina_completa/",
+      "category": "familiar",
+      "brand": "SINGER",
+      "model": "Heavy Duty",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 8,
+      "send_when_customer_says": [
+        "singer heavy duty",
+        "coser telas gruesas",
+        "máquina resistente",
+        "para jeans",
+        "uso intensivo"
+      ]
+    },
+    {
+      "image_id": "I004",
+      "slug": "singer_s0105_fileteadora_familiar",
+      "path": "catalog/I004_singer_s0105_fileteadora_familiar/",
+      "category": "fileteadora_familiar",
+      "brand": "SINGER",
+      "model": "S0105",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 7,
+      "send_when_customer_says": [
+        "fileteadora singer",
+        "hacer orillos",
+        "terminar prendas",
+        "costura profesional en casa",
+        "ropa elástica"
+      ]
+    },
+    {
+      "image_id": "I005",
+      "slug": "kingter_fileteadora_familiar",
+      "path": "catalog/I005_kingter_fileteadora_familiar/",
+      "category": "fileteadora_familiar",
+      "brand": "KINGTER",
+      "model": "",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 7,
+      "send_when_customer_says": [
+        "fileteadora kingter",
+        "para confección",
+        "terminar ropa",
+        "filetear telas",
+        "emprender costura"
+      ]
+    },
+    {
+      "image_id": "I002",
+      "slug": "union_un300_maquina_completa",
+      "path": "catalog/I002_union_un300_maquina_completa/",
+      "category": "familiar",
+      "brand": "UNION",
+      "model": "UN300",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 6,
+      "send_when_customer_says": [
+        "máquina de coser familiar",
+        "para la casa",
+        "arreglar ropa",
+        "empezar a coser",
+        "costura básica"
+      ]
+    },
+    {
+      "image_id": "I003",
+      "slug": "kansew_ks653_maquina_completa",
+      "path": "catalog/I003_kansew_ks653_maquina_completa/",
+      "category": "familiar",
+      "brand": "KANSEW",
+      "model": "KS653",
+      "represents": "maquina_completa",
+      "conversation_role": "evidencia_principal",
+      "priority": 6,
+      "send_when_customer_says": [
+        "máquina kansew",
+        "coser en casa",
+        "puntadas decorativas",
+        "máquina familiar",
+        "emprender desde casa"
+      ]
+    }
+  ]
+}

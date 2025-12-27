@@ -1,0 +1,42 @@
+{
+  "image_id": "I005",
+  "title": "Fileteadora familiar KINGTER",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "fileteadora_familiar",
+  "brand": "KINGTER",
+  "model": "",
+  "represents": "maquina_completa",
+  "key_features": [
+    "Fileteadora familiar",
+    "Diseño robusto",
+    "Sistema de múltiples hilos"
+  ],
+  "benefits": [
+    "Costuras más limpias",
+    "Mayor durabilidad en prendas",
+    "Ideal para confección continua en casa"
+  ],
+  "use_cases": [
+    "Confección de ropa",
+    "Emprendimientos textiles",
+    "Terminación de prendas"
+  ],
+  "send_when_customer_says": [
+    "fileteadora kingter",
+    "para confección",
+    "terminar ropa",
+    "filetear telas",
+    "emprender costura"
+  ],
+  "handoff_triggers": ["precio", "disponibilidad", "horario", "pago", "envio"],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Es una fileteadora familiar pensada para quienes buscan mejores acabados.",
+    "qualifier": "¿La usarías para producción ocasional o constante?",
+    "closing": "Te atendemos en Montería y enviamos a cualquier ciudad."
+  },
+  "language": "es-CO",
+  "priority": 7
+}
+

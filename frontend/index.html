@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luisa - Almacén y Taller El Sastre</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Vista de Chat -->
+        <div id="chatView" class="chat-container">
+            <div class="chat-header">
+                <div class="header-info">
+                    <div class="avatar">L</div>
+                    <div>
+                        <div class="name">Luisa</div>
+                        <div class="status">En línea</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="messagesContainer" class="messages-container">
+                <div class="message luisa-message">
+                    <div class="message-content">
+                        ¡Hola! 👋 Soy Luisa, ¿en qué te puedo ayudar hoy?
+                    </div>
+                    <div class="message-time">Ahora</div>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Escribe un mensaje..."
+                    autocomplete="off"
+                >
+                <button id="sendButton" class="send-button">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Vista Interna (solo demo) -->
+        <div id="internalView" class="internal-view hidden">
+            <div class="internal-header">
+                <h2>Vista Interna - Handoffs</h2>
+                <button id="backToChat" class="back-button">← Volver al Chat</button>
+            </div>
+            <div id="handoffsContainer" class="handoffs-container">
+                <div class="loading">Cargando handoffs...</div>
+            </div>
+        </div>
+        
+        <!-- Botón flotante para vista interna -->
+        <button id="toggleView" class="toggle-view-button" title="Ver handoffs">
+            🔍
+        </button>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+

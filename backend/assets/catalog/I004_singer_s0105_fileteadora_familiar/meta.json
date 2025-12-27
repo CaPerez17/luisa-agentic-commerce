@@ -1,0 +1,42 @@
+{
+  "image_id": "I004",
+  "title": "Fileteadora familiar SINGER S0105",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "fileteadora_familiar",
+  "brand": "SINGER",
+  "model": "S0105",
+  "represents": "maquina_completa",
+  "key_features": [
+    "Fileteadora familiar",
+    "Sistema de múltiples hilos",
+    "Diseño compacto"
+  ],
+  "benefits": [
+    "Acabados profesionales en casa",
+    "Costuras más resistentes",
+    "Ideal para prendas elásticas"
+  ],
+  "use_cases": [
+    "Confección de ropa",
+    "Terminación de prendas",
+    "Emprendimientos textiles desde casa"
+  ],
+  "send_when_customer_says": [
+    "fileteadora singer",
+    "hacer orillos",
+    "terminar prendas",
+    "costura profesional en casa",
+    "ropa elástica"
+  ],
+  "handoff_triggers": ["precio", "disponibilidad", "horario", "pago", "envio"],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Es una fileteadora familiar ideal para lograr acabados limpios y resistentes.",
+    "qualifier": "¿La necesitas para ropa deportiva, casual o ambos?",
+    "closing": "Estamos ubicados en Montería y realizamos envíos a todo el país."
+  },
+  "language": "es-CO",
+  "priority": 7
+}
+

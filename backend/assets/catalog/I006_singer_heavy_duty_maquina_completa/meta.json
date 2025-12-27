@@ -1,0 +1,42 @@
+{
+  "image_id": "I006",
+  "title": "Máquina de coser familiar SINGER Heavy Duty",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "familiar",
+  "brand": "SINGER",
+  "model": "Heavy Duty",
+  "represents": "maquina_completa",
+  "key_features": [
+    "Máquina de coser familiar reforzada",
+    "Diseño robusto",
+    "Controles mecánicos resistentes"
+  ],
+  "benefits": [
+    "Mayor resistencia para telas exigentes",
+    "Ideal para costura frecuente",
+    "Durabilidad superior"
+  ],
+  "use_cases": [
+    "Costura doméstica intensiva",
+    "Arreglos de jeans",
+    "Emprendimientos desde casa"
+  ],
+  "send_when_customer_says": [
+    "singer heavy duty",
+    "coser telas gruesas",
+    "máquina resistente",
+    "para jeans",
+    "uso intensivo"
+  ],
+  "handoff_triggers": ["precio", "disponibilidad", "horario", "pago", "envio"],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Es una máquina familiar reforzada pensada para trabajos más exigentes.",
+    "qualifier": "¿Qué tipo de telas sueles trabajar con más frecuencia?",
+    "closing": "Estamos en Montería y realizamos envíos a todo Colombia."
+  },
+  "language": "es-CO",
+  "priority": 8
+}
+

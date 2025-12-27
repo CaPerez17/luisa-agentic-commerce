@@ -1,0 +1,42 @@
+{
+  "image_id": "I003",
+  "title": "Máquina de coser familiar KANSEW KS653",
+  "source_platform": "facebook",
+  "source_type": "post_image",
+  "category": "familiar",
+  "brand": "KANSEW",
+  "model": "KS653",
+  "represents": "maquina_completa",
+  "key_features": [
+    "Máquina de coser familiar",
+    "Selector de puntadas",
+    "Controles mecánicos"
+  ],
+  "benefits": [
+    "Versátil para diferentes tipos de costura",
+    "Adecuada para uso doméstico continuo",
+    "Fácil aprendizaje"
+  ],
+  "use_cases": [
+    "Costura doméstica",
+    "Confección básica",
+    "Arreglos y modificaciones de ropa"
+  ],
+  "send_when_customer_says": [
+    "máquina kansew",
+    "coser en casa",
+    "puntadas decorativas",
+    "máquina familiar",
+    "emprender desde casa"
+  ],
+  "handoff_triggers": ["precio", "disponibilidad", "horario", "pago", "envio"],
+  "conversation_role": "evidencia_principal",
+  "cta": {
+    "educational": "Es una máquina familiar pensada para costura doméstica y proyectos sencillos.",
+    "qualifier": "¿Qué tipo de prendas piensas coser principalmente?",
+    "closing": "Puedes visitarnos en Montería o pedir envío a cualquier parte del país."
+  },
+  "language": "es-CO",
+  "priority": 6
+}
+
