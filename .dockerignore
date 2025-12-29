@@ -1,0 +1,67 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+*.log
+
+# Secrets
+.env
+*.secret
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (no necesario en imagen)
+*.md
+!README.md
+
+# Frontend (no necesario en backend)
+frontend/
+
+# Outbox
+outbox/
+
+# Assets cache
+backend/assets/cache/
+
+# Tests (no necesario en producción)
+test_*.py
+tests/
+
+# Scripts de desarrollo
+backend/scripts/check_*.py
+backend/scripts/prepare_*.py
+backend/scripts/rebuild_*.py
+backend/scripts/test_*.py
+

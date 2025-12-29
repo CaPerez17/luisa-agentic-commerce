@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luisa-backend
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/app/data/luisa.db
+      - PRODUCTION_MODE=true
+      - LOG_FORMAT=json
+      - LOG_LEVEL=INFO
+    env_file:
+      - .env
+    volumes:
+      # Persistir base de datos
+      - ./data:/app/data
+      # Assets del catálogo (si se necesitan actualizar sin rebuild)
+      - ./backend/assets:/app/assets:ro
+    ports:
+      - "127.0.0.1:8000:8000"  # Solo localhost, Caddy accede internamente
+    networks:
+      - luisa-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: luisa-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # Para HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - luisa-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  luisa-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+    # Certificados SSL/TLS de Let's Encrypt
+  caddy_config:
+    # Configuración de Caddy
+
