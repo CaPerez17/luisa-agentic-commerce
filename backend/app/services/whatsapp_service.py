@@ -13,6 +13,7 @@ from app.config import (
     WHATSAPP_API_VERSION,
     TEST_NOTIFY_NUMBER
 )
+from app.models.database import check_outbox_dedup
 from app.logging_config import logger
 
 
@@ -46,6 +47,16 @@ async def send_whatsapp_message(
     
     # Limpiar número
     phone = to.replace("+", "").replace(" ", "").replace("-", "")
+    
+    # ANTI-SPAM GUARD: Verificar deduplicación de outbox
+    if check_outbox_dedup(phone, text, ttl_seconds=120):
+        logger.info(
+            "Mensaje WhatsApp bloqueado (outbox dedup)",
+            to=_mask_phone(phone),
+            text_preview=text[:50],
+            decision_path="outgoing_dedup_skip"
+        )
+        return False, "Mensaje duplicado reciente (anti-spam)"
     
     url = f"{WHATSAPP_API_BASE}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
     
@@ -185,10 +196,52 @@ def is_status_update(body: Dict[str, Any]) -> bool:
         
         value = changes[0].get("value", {})
         
-        # Si tiene "statuses" es actualización de estado
-        return "statuses" in value
+        # Si tiene "statuses" y NO tiene "messages", es actualización de estado
+        has_statuses = "statuses" in value and bool(value.get("statuses"))
+        has_messages = "messages" in value and bool(value.get("messages"))
+        
+        return has_statuses and not has_messages
     except:
         return False
+
+
+def analyze_webhook_event(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Analiza el webhook para instrumentación forense.
+    Compatible con la función en routers/whatsapp.py
+    """
+    try:
+        entry = body.get("entry", [])
+        if not entry:
+            return {"event_kind": "unknown", "has_messages": False, "has_statuses": False}
+        
+        changes = entry[0].get("changes", [])
+        if not changes:
+            return {"event_kind": "unknown", "has_messages": False, "has_statuses": False}
+        
+        value = changes[0].get("value", {})
+        messages = value.get("messages", [])
+        statuses = value.get("statuses", [])
+        
+        has_messages = bool(messages)
+        has_statuses = bool(statuses)
+        
+        if has_statuses and not has_messages:
+            event_kind = "statuses"
+        elif has_messages and not has_statuses:
+            event_kind = "messages"
+        elif has_messages and has_statuses:
+            event_kind = "mixed"
+        else:
+            event_kind = "unknown"
+        
+        return {
+            "event_kind": event_kind,
+            "has_messages": has_messages,
+            "has_statuses": has_statuses
+        }
+    except:
+        return {"event_kind": "error", "has_messages": False, "has_statuses": False}
 
 
 def get_phone_conversation_id(phone: str) -> str:

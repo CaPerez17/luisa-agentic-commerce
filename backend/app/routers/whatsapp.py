@@ -25,7 +25,8 @@ from app.services.whatsapp_service import (
     is_status_update,
     send_whatsapp_message,
     send_internal_notification,
-    get_phone_conversation_id
+    get_phone_conversation_id,
+    analyze_webhook_event
 )
 from app.services.rate_limit import allow as rl_allow, remaining as rl_remaining
 from app.services.context_service import extract_context_from_history
@@ -81,13 +82,42 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.warning("Webhook recibido sin JSON válido")
         return {"status": "ok"}
     
-    # Ignorar actualizaciones de estado
-    if is_status_update(body):
+    # INSTRUMENTACIÓN FORENSE
+    event_kind, has_messages, has_statuses, msg_ids, status_ids, phone_from, wa_phone_number_id = _analyze_webhook_event(body)
+    
+    # FIX P0: NO procesar eventos que no son mensajes del usuario
+    if has_statuses and not has_messages:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "Webhook ignorado (solo statuses)",
+            event_kind=event_kind,
+            status_ids=status_ids[:3] if status_ids else [],
+            elapsed_ms=round(elapsed_ms, 1),
+            decision_path="ignore_status_event"
+        )
+        return {"status": "ok"}
+    
+    if not has_messages:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "Webhook ignorado (sin messages)",
+            event_kind=event_kind,
+            elapsed_ms=round(elapsed_ms, 1),
+            decision_path="no_messages_skip"
+        )
         return {"status": "ok"}
     
     # Parsear mensaje
     parsed = parse_webhook_message(body)
     if not parsed:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "Webhook ignorado (parse falló)",
+            event_kind=event_kind,
+            msg_ids=msg_ids[:3] if msg_ids else [],
+            elapsed_ms=round(elapsed_ms, 1),
+            decision_path="parse_failed_skip"
+        )
         return {"status": "ok"}
     
     message_id = parsed.get("message_id", "")
@@ -148,14 +178,62 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     elapsed_ms = (time.perf_counter() - start_time) * 1000
     logger.info(
         "Mensaje WhatsApp recibido (queued)",
+        event_kind=event_kind,
         message_id=message_id[:20] if message_id else "unknown",
-        phone=phone_from[-4:],
+        phone=phone_from[-4:] if phone_from else "unknown",
         text_length=len(text),
         elapsed_ms=round(elapsed_ms, 1),
-        decision_path="queued_processing"
+        decision_path="queued_processing",
+        msg_ids=msg_ids[:3] if msg_ids else []
     )
     
     return {"status": "ok", "queued": True}
+
+
+def _analyze_webhook_event(body: dict) -> tuple:
+    """
+    Analiza el webhook para instrumentación forense.
+    Returns: (event_kind, has_messages, has_statuses, msg_ids, status_ids, phone_from, wa_phone_number_id)
+    """
+    try:
+        entry = body.get("entry", [])
+        if not entry:
+            return ("unknown", False, False, [], [], None, None)
+        
+        changes = entry[0].get("changes", [])
+        if not changes:
+            return ("unknown", False, False, [], [], None, None)
+        
+        value = changes[0].get("value", {})
+        metadata = value.get("metadata", {})
+        wa_phone_number_id = metadata.get("phone_number_id")
+        
+        messages = value.get("messages", [])
+        statuses = value.get("statuses", [])
+        
+        has_messages = bool(messages)
+        has_statuses = bool(statuses)
+        
+        if has_statuses and not has_messages:
+            event_kind = "statuses"
+        elif has_messages and not has_statuses:
+            event_kind = "messages"
+        elif has_messages and has_statuses:
+            event_kind = "mixed"
+        else:
+            event_kind = "unknown"
+        
+        msg_ids = [msg.get("id", "")[:30] for msg in messages[:3] if msg.get("id")]
+        status_ids = [st.get("id", "")[:30] for st in statuses[:3] if st.get("id")]
+        
+        phone_from = None
+        if messages:
+            phone_from = messages[0].get("from", "")
+        
+        return (event_kind, has_messages, has_statuses, msg_ids, status_ids, phone_from, wa_phone_number_id)
+    except Exception as e:
+        logger.error("Error analizando webhook event", error=str(e))
+        return ("error", False, False, [], [], None, None)
 
 
 async def _process_whatsapp_message(

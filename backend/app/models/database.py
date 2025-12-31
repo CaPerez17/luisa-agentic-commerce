@@ -255,6 +255,22 @@ def init_db():
             ON wa_processed_messages(received_at)
         """)
         
+        # Tabla para deduplicación de outbox (anti-spam)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wa_outbox_dedup (
+                dedup_key TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ttl_seconds INTEGER DEFAULT 120,
+                phone_to TEXT,
+                text_preview TEXT
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_wa_outbox_created 
+            ON wa_outbox_dedup(created_at)
+        """)
+        
         # Configurar SQLite para mejor concurrencia
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=3000")
@@ -471,3 +487,59 @@ def is_wa_message_processed(message_id: str) -> bool:
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM wa_processed_messages WHERE message_id = ?", (message_id,))
         return cursor.fetchone() is not None
+
+
+def check_outbox_dedup(phone_to: str, text: str, ttl_seconds: int = 120) -> bool:
+    """
+    Verifica si ya enviamos un mensaje similar recientemente (anti-spam).
+    
+    Args:
+        phone_to: Número de destino
+        text: Texto del mensaje
+        ttl_seconds: TTL en segundos (default 120 = 2 minutos)
+    
+    Returns:
+        True si ya existe (no enviar), False si es nuevo (puede enviar)
+    """
+    if not phone_to or not text:
+        return False
+    
+    # Normalizar texto (lowercase, sin espacios extra)
+    normalized_text = " ".join(text.lower().strip().split()[:10])  # Primeras 10 palabras
+    
+    # Crear dedup_key: phone:normalized_text:minute_bucket
+    from datetime import datetime
+    now = datetime.utcnow()
+    minute_bucket = now.strftime("%Y%m%d%H%M")  # Ventana de 1 minuto
+    
+    dedup_key = f"{phone_to}:{normalized_text[:50]}:{minute_bucket}"
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Verificar si existe y no ha expirado
+        cursor.execute("""
+            SELECT 1 FROM wa_outbox_dedup 
+            WHERE dedup_key = ? 
+            AND (julianday('now') - julianday(created_at)) * 86400 < ttl_seconds
+        """, (dedup_key,))
+        
+        if cursor.fetchone():
+            return True  # Ya existe, no enviar
+        
+        # Insertar nuevo registro
+        cursor.execute("""
+            INSERT OR REPLACE INTO wa_outbox_dedup (dedup_key, phone_to, text_preview, ttl_seconds)
+            VALUES (?, ?, ?, ?)
+        """, (dedup_key, phone_to[-4:] if phone_to else "", text[:50], ttl_seconds))
+        
+        return False  # Es nuevo, puede enviar
+
+
+def cleanup_expired_outbox_dedup():
+    """Limpia registros expirados de outbox_dedup (ejecutar periódicamente)."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM wa_outbox_dedup 
+            WHERE (julianday('now') - julianday(created_at)) * 86400 > ttl_seconds
+        """)

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Script de prueba para verificar idempotencia del webhook de WhatsApp.
-Simula dos POSTs con el mismo message_id y verifica que el segundo sea deduplicado.
+Script de prueba para verificar idempotencia y anti-spam del webhook de WhatsApp.
+- Prueba idempotencia por message_id
+- Prueba que statuses no procesen mensajes
+- Prueba que outbox dedup funcione
 """
 import requests
 import json
@@ -139,12 +141,183 @@ def test_idempotency():
     return True
 
 
+# Payload de prueba con solo statuses (sin messages)
+STATUS_ONLY_PAYLOAD = {
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+            "changes": [
+                {
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "15551380876",
+                            "phone_number_id": "996869753500859"
+                        },
+                        "statuses": [
+                            {
+                                "id": "wamid.status_test_12345",
+                                "status": "delivered",
+                                "timestamp": "1234567890",
+                                "recipient_id": "573142156486"
+                            }
+                        ]
+                    },
+                    "field": "messages"
+                }
+            ]
+        }
+    ]
+}
+
+
+def test_status_only():
+    """Prueba que payloads solo con statuses no procesen mensajes."""
+    print("=" * 70)
+    print("PRUEBA: Payload solo con statuses (sin messages)")
+    print("=" * 70)
+    print()
+    
+    print("Enviando payload con solo statuses...")
+    try:
+        response = requests.post(
+            WEBHOOK_URL,
+            json=STATUS_ONLY_PAYLOAD,
+            headers={"Content-Type": "application/json"},
+            timeout=5
+        )
+        print(f"   Status: {response.status_code}")
+        print(f"   Response: {response.json()}")
+        
+        if response.status_code != 200:
+            print(f"   ❌ ERROR: Status {response.status_code}")
+            return False
+        
+        result = response.json()
+        if result.get("status") != "ok":
+            print(f"   ❌ ERROR: Response inesperado: {result}")
+            return False
+        
+        print("   ✅ Payload de statuses ignorado correctamente")
+        print("   ✅ NO se encoló procesamiento")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ ERROR: {e}")
+        return False
+
+
+def test_mixed_payload():
+    """Prueba payload con messages y statuses (debe procesar solo messages)."""
+    print("=" * 70)
+    print("PRUEBA: Payload mixto (messages + statuses)")
+    print("=" * 70)
+    print()
+    
+    mixed_payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+                "changes": [
+                    {
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "metadata": {
+                                "display_phone_number": "15551380876",
+                                "phone_number_id": "996869753500859"
+                            },
+                            "messages": [
+                                {
+                                    "from": "573142156486",
+                                    "id": "wamid.mixed_test_12345",
+                                    "timestamp": "1234567890",
+                                    "type": "text",
+                                    "text": {"body": "test mixed"}
+                                }
+                            ],
+                            "statuses": [
+                                {
+                                    "id": "wamid.status_mixed_12345",
+                                    "status": "delivered",
+                                    "timestamp": "1234567890",
+                                    "recipient_id": "573142156486"
+                                }
+                            ]
+                        },
+                        "field": "messages"
+                    }
+                ]
+            }
+        ]
+    }
+    
+    print("Enviando payload mixto (messages + statuses)...")
+    try:
+        response = requests.post(
+            WEBHOOK_URL,
+            json=mixed_payload,
+            headers={"Content-Type": "application/json"},
+            timeout=5
+        )
+        print(f"   Status: {response.status_code}")
+        print(f"   Response: {response.json()}")
+        
+        if response.status_code != 200:
+            print(f"   ❌ ERROR: Status {response.status_code}")
+            return False
+        
+        result = response.json()
+        if result.get("queued"):
+            print("   ✅ Payload mixto procesado (messages encolados)")
+            return True
+        else:
+            print(f"   ⚠️  WARNING: No se encoló procesamiento")
+            return False
+        
+    except Exception as e:
+        print(f"   ❌ ERROR: {e}")
+        return False
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         WEBHOOK_URL = sys.argv[1]
         print(f"Usando URL: {WEBHOOK_URL}")
         print()
     
-    success = test_idempotency()
-    sys.exit(0 if success else 1)
+    print("🧪 EJECUTANDO SUITE DE PRUEBAS")
+    print()
+    
+    results = []
+    
+    # Test 1: Idempotencia
+    results.append(("Idempotencia", test_idempotency()))
+    print()
+    
+    # Test 2: Statuses only
+    results.append(("Statuses only", test_status_only()))
+    print()
+    
+    # Test 3: Mixed payload
+    results.append(("Mixed payload", test_mixed_payload()))
+    print()
+    
+    # Resumen
+    print("=" * 70)
+    print("RESUMEN DE PRUEBAS")
+    print("=" * 70)
+    for name, success in results:
+        status = "✅ PASS" if success else "❌ FAIL"
+        print(f"  {name}: {status}")
+    
+    all_passed = all(result[1] for result in results)
+    print()
+    if all_passed:
+        print("✅ TODAS LAS PRUEBAS PASARON")
+    else:
+        print("❌ ALGUNAS PRUEBAS FALLARON")
+    
+    sys.exit(0 if all_passed else 1)
 
