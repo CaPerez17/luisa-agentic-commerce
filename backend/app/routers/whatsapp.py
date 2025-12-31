@@ -32,6 +32,8 @@ from app.services.whatsapp_service import (
 )
 from app.services.sales_dialogue import next_action
 from app.services.humanizer import humanize_response_sync
+from app.services.sales_brain import process_with_salesbrain
+from app.config import SALESBRAIN_ENABLED
 from app.services.rate_limit import allow as rl_allow, remaining as rl_remaining
 from app.services.context_service import extract_context_from_history
 from app.services.intent_service import analyze_intent
@@ -343,19 +345,43 @@ async def _process_whatsapp_message(
                 # (pero NO silenciar inmediatamente, dar HANDOFF_COOLDOWN_MINUTES)
                 
             else:
-                # SALES DIALOGUE MANAGER: Generar respuesta comercial humana
-                dialogue_result = next_action(
-                    user_text=text,
-                    intent=intent,
-                    state=state,
-                    history=history,
-                    context=context
-                )
-                
-                response_text = dialogue_result.get("reply_text", "")
-                reply_assets = dialogue_result.get("reply_assets")
-                state_updates = dialogue_result.get("state_updates", {})
-                decision_path = dialogue_result.get("decision_path", "dialogue_handled")
+                # SALESBRAIN o SALES DIALOGUE MANAGER: Generar respuesta comercial
+                if SALESBRAIN_ENABLED:
+                    # Usar SalesBrain (DECIDE → PLAN → SPEAK)
+                    state["phone_from"] = phone_from
+                    state["humanize_enabled"] = True  # Activar humanizer si está configurado
+                    
+                    brain_result = process_with_salesbrain(
+                        text=text,
+                        state=state,
+                        history=history,
+                        context=context
+                    )
+                    
+                    response_text = brain_result.get("reply_text", "")
+                    reply_assets = brain_result.get("reply_assets")
+                    state_updates = brain_result.get("state_updates", {})
+                    decision_path = brain_result.get("decision_path", "salesbrain_handled")
+                else:
+                    # Fallback a Sales Dialogue Manager normal
+                    dialogue_result = next_action(
+                        user_text=text,
+                        intent=intent,
+                        state=state,
+                        history=history,
+                        context=context
+                    )
+                    
+                    response_text = dialogue_result.get("reply_text", "")
+                    reply_assets = dialogue_result.get("reply_assets")
+                    state_updates = dialogue_result.get("state_updates", {})
+                    decision_path = dialogue_result.get("decision_path", "dialogue_handled")
+                    
+                    # HUMANIZER: Opcionalmente humanizar la respuesta
+                    humanized_text, humanize_meta = humanize_response_sync(response_text, updated_state if 'updated_state' in locals() else state)
+                    if humanize_meta.get("humanized"):
+                        response_text = humanized_text
+                        decision_path = f"{decision_path}->humanized"
                 
                 # Actualizar estado conversacional
                 updated_state = {**state, **state_updates}
@@ -363,13 +389,7 @@ async def _process_whatsapp_message(
                 updated_state["last_intent"] = intent
                 save_conversation_state(phone_from, updated_state)
                 
-                # HUMANIZER: Opcionalmente humanizar la respuesta
-                humanized_text, humanize_meta = humanize_response_sync(response_text, updated_state)
-                if humanize_meta.get("humanized"):
-                    response_text = humanized_text
-                    tracer.decision_path = f"{decision_path}->humanized"
-                else:
-                    tracer.decision_path = decision_path
+                tracer.decision_path = decision_path
                 
                 # Si hay assets, prepararlos para envío (TODO: implementar envío de imágenes)
                 if reply_assets:

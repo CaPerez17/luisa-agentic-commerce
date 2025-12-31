@@ -48,6 +48,18 @@ OPENAI_CACHEABLE_INTENTS = os.getenv(
 ).split(",")
 
 # ============================================================================
+# SALESBRAIN CONFIGURATION
+# ============================================================================
+SALESBRAIN_ENABLED = os.getenv("SALESBRAIN_ENABLED", "false").lower() == "true"
+SALESBRAIN_PLANNER_ENABLED = os.getenv("SALESBRAIN_PLANNER_ENABLED", "true").lower() == "true"
+SALESBRAIN_CLASSIFIER_ENABLED = os.getenv("SALESBRAIN_CLASSIFIER_ENABLED", "true").lower() == "true"
+SALESBRAIN_MAX_CALLS_PER_CONVERSATION = int(os.getenv("SALESBRAIN_MAX_CALLS_PER_CONVERSATION", "4"))
+SALESBRAIN_CACHE_TTL_SECONDS = int(os.getenv("SALESBRAIN_CACHE_TTL_SECONDS", "300"))
+
+OPENAI_MODEL_CLASSIFIER = os.getenv("OPENAI_MODEL_CLASSIFIER", "gpt-4o-mini")
+OPENAI_MODEL_PLANNER = os.getenv("OPENAI_MODEL_PLANNER", "gpt-4o-mini")
+
+# ============================================================================
 # WHATSAPP CLOUD API
 # ============================================================================
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "false").lower() == "true"
