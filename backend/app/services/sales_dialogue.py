@@ -3,6 +3,7 @@ Sales Dialogue Manager para LUISA.
 Gestiona el estado conversacional y genera respuestas comerciales humanas.
 """
 import re
+import unicodedata
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
@@ -68,14 +69,16 @@ def next_action(
     
     # Si el mensaje es ambiguo y NO hay estado previo, hacer triage
     if is_ambiguous and stage == "discovery" and not state.get("last_intent"):
+        ambiguous_turns = state.get("ambiguous_turns", 0)
         return {
-            "reply_text": generate_triage_greeting(state),
+            "reply_text": generate_triage_greeting(state, ambiguous_turns),
             "reply_assets": None,
             "state_updates": {
                 "stage": "triage",
                 "last_question": "triage_menu",
                 "pending_question": "triage_menu",
-                "last_intent": "triage"
+                "last_intent": "triage",
+                "ambiguous_turns": ambiguous_turns + 1
             },
             "decision_path": "triage_greeting"
         }
@@ -124,13 +127,17 @@ def next_action(
         return _handle_photos(user_text, intent, text_lower, state, context)
     elif stage == "support":
         return _handle_support(user_text, intent, text_lower, state)
+    elif stage == "handoff_schedule":
+        return _handle_handoff_schedule(user_text, intent, text_lower, state)
     elif stage == "triage":
-        # Si sigue en triage sin respuesta clara, re-preguntar
+        # Contar turnos ambiguos consecutivos
+        ambiguous_turns = state.get("ambiguous_turns", 0) + 1
         return {
-            "reply_text": generate_triage_greeting(state),
+            "reply_text": generate_triage_greeting(state, ambiguous_turns),
             "reply_assets": None,
             "state_updates": {
-                "last_question": "triage_menu"
+                "last_question": "triage_menu",
+                "ambiguous_turns": ambiguous_turns
             },
             "decision_path": "triage_repeat"
         }
@@ -383,7 +390,8 @@ def _handle_pricing(user_text: str, intent: str, text_lower: str, state: dict, c
             "last_question": "use_case",
             "last_intent": intent
         }
-    elif not context.get("ciudad") and not slots.get("city"):
+    elif not slots.get("city_filled") and not context.get("ciudad"):
+        # ANTI-REPETICIÓN: Solo preguntar si NO está lleno
         reply += "\n\n¿En qué ciudad te encuentras para coordinar el envío?"
         state_updates = {
             "slots": slots,
@@ -408,58 +416,75 @@ def _handle_pricing(user_text: str, intent: str, text_lower: str, state: dict, c
 
 
 def _handle_visit(user_text: str, intent: str, text_lower: str, state: dict, context: dict) -> Dict[str, Any]:
-    """Maneja etapa de visita a tienda."""
+    """Maneja etapa de visita a tienda. SIN handoff, solo cerrar visita."""
     slots = state.get("slots", {})
     city = slots.get("city") or context.get("ciudad")
     
-    # Detectar si menciona ciudad distinta a Montería
-    if "quiero pasar" in text_lower or "pasar" in text_lower or "visitar" in text_lower:
-        # Extraer ciudad si menciona una
-        city_match = re.search(r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b', user_text)
-        if city_match:
-            mentioned_city = city_match.group(1)
-            if mentioned_city.lower() not in ["montería", "monteria", "quiero", "pasar"]:
-                slots["city"] = mentioned_city
-                city = mentioned_city
+    # Detectar si pregunta por visita/ubicación/dirección
+    visit_keywords = ["puedo visitar", "donde queda", "dónde queda", "ubicación", "ubicacion", 
+                      "dirección", "direccion", "puedo pasar", "quiero pasar", "visitar"]
+    
+    is_visit_request = any(kw in text_lower for kw in visit_keywords)
+    
+    if is_visit_request:
+        # Responder con dirección + horarios (datos exactos)
+        reply = (
+            "Estamos en Calle 34 #1-30, Montería.\n\n"
+            "🕘 Lunes a viernes: 9am-6pm\n"
+            "🕘 Sábados: 9am-2pm\n\n"
+        )
         
-        # Disambiguación humana
-        if city and city.lower() not in ["montería", "monteria"]:
-            reply = (
-                f"Perfecto. ¿Vas a venir a Montería a la tienda o prefieres que te coordinemos envío a {city}?"
-            )
-            state_updates = {
-                "slots": {**slots, "city": city},
-                "last_question": "visit_or_delivery",
-                "last_intent": intent
-            }
-        else:
-            reply = (
-                "Perfecto. Estamos en Calle 34 #1-30, Montería.\n\n"
-                "🕘 Lunes a viernes: 9am-6pm\n"
-                "🕘 Sábados: 9am-2pm\n\n"
-                "¿Qué día te viene mejor?"
-            )
-            state_updates = {
-                "slots": slots,
-                "last_question": "visit_date",
-                "last_intent": intent
-            }
+        # Si ya dio ciudad distinta, mencionar envío opcional
+        if city and city.lower() not in ["montería", "monteria", "monteria"]:
+            reply += f"Si prefieres, también hacemos envío a {city}.\n\n"
+        
+        # Pregunta de cierre (1 pregunta)
+        reply += "¿Te queda mejor venir hoy o mañana?"
+        
+        state_updates = {
+            "slots": {**slots, "visit_or_delivery": "visit"},
+            "stage": "visit",
+            "last_question": "visit_when",
+            "last_intent": intent
+        }
+        
+        return {
+            "reply_text": reply,
+            "reply_assets": None,
+            "state_updates": state_updates,
+            "decision_path": "visit_handled_no_handoff"
+        }
+    
+    # Si ya está en stage visit y responde sobre cuándo venir
+    if "hoy" in text_lower or "mañana" in text_lower or "mañana" in text_lower or "lunes" in text_lower or "martes" in text_lower:
+        day = "hoy" if "hoy" in text_lower else ("mañana" if "mañana" in text_lower or "mañana" in text_lower else "pronto")
+        reply = f"Perfecto, te esperamos {day}. ¿Te llamamos al mismo número de WhatsApp para confirmar?"
+        
+        state_updates = {
+            "slots": {**slots, "visit_day": day},
+            "stage": "handoff_schedule",
+            "last_question": "confirm_call",
+            "last_intent": intent
+        }
+        
+        return {
+            "reply_text": reply,
+            "reply_assets": None,
+            "state_updates": state_updates,
+            "decision_path": "visit_scheduled"
+        }
+    
+    # Default: preguntar si quiere visitar o envío
+    if not slots.get("city_filled"):
+        reply = "¿Vas a venir a Montería a la tienda o prefieres envío a domicilio?"
     else:
-        # Si ya dio ciudad, no preguntar de nuevo
-        if city and "city" not in state.get("asked_questions", {}):
-            reply = "¿Vas a venir a Montería a la tienda o prefieres envío a domicilio?"
-            state_updates = {
-                "slots": slots,
-                "last_question": "visit_or_delivery",
-                "last_intent": intent
-            }
-        else:
-            reply = "¿Quieres pasar o prefieres envío a domicilio?"
-            state_updates = {
-                "slots": slots,
-                "last_question": "visit_or_delivery",
-                "last_intent": intent
-            }
+        reply = f"¿Vas a venir a Montería a la tienda o prefieres envío a {slots.get('city', 'domicilio')}?"
+    
+    state_updates = {
+        "slots": slots,
+        "last_question": "visit_or_delivery",
+        "last_intent": intent
+    }
     
     return {
         "reply_text": reply,
@@ -469,20 +494,58 @@ def _handle_visit(user_text: str, intent: str, text_lower: str, state: dict, con
     }
 
 
+def _normalize_city(city: str) -> str:
+    """Normaliza nombre de ciudad (lower, sin tildes)."""
+    import unicodedata
+    city_lower = city.lower().strip()
+    # Remover tildes
+    city_norm = ''.join(c for c in unicodedata.normalize('NFD', city_lower) 
+                       if unicodedata.category(c) != 'Mn')
+    return city_norm
+
+
+def _extract_city_from_text(text: str) -> Optional[str]:
+    """Extrae nombre de ciudad del texto (ciudades comunes de Colombia)."""
+    # Lista de ciudades comunes (puede expandirse)
+    cities = [
+        "montería", "monteria", "bogotá", "bogota", "medellín", "medellin",
+        "cali", "barranquilla", "cartagena", "bucaramanga", "pereira",
+        "santa marta", "manizales", "ibagué", "ibague", "villavicencio",
+        "valledupar", "sincelejo", "armenia", "pasto", "buenaventura",
+        "montelíbano", "montelibano", "cereté", "cerete", "lorica",
+        "sahagún", "sahagun", "ayapel", "ciénaga", "cienaga"
+    ]
+    
+    text_lower = text.lower()
+    for city in cities:
+        if city in text_lower:
+            # Retornar con capitalización
+            return city.capitalize()
+    
+    # Intentar extraer con regex (palabra con mayúscula inicial)
+    city_match = re.search(r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b', text)
+    if city_match:
+        city = city_match.group(1)
+        if city.lower() not in ["quiero", "pasar", "envío", "envio", "domicilio", "hoy", "mañana", "mañana"]:
+            return city
+    
+    return None
+
+
 def _handle_shipping(user_text: str, intent: str, text_lower: str, state: dict, context: dict) -> Dict[str, Any]:
     """Maneja etapa de envío."""
     slots = state.get("slots", {})
     asked_questions = state.get("asked_questions", {})
     
-    # Extraer ciudad
-    city_match = re.search(r'\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b', user_text)
-    if city_match:
-        city = city_match.group(1)
-        if city.lower() not in ["quiero", "pasar", "envío", "envio", "domicilio"]:
-            slots["city"] = city
+    # Extraer ciudad del texto
+    city = _extract_city_from_text(user_text)
+    if city:
+        slots["city"] = city
+        slots["city_norm"] = _normalize_city(city)
+        slots["city_filled"] = True
     
-    # Si ya tiene ciudad, no preguntar de nuevo
-    if slots.get("city") and "city" in asked_questions:
+    # ANTI-REPETICIÓN: Si ya tiene ciudad, NO preguntar de nuevo
+    if slots.get("city_filled") and slots.get("city"):
         reply = f"Perfecto, envío a {slots['city']}. ¿Te separo una máquina o quieres ver fotos primero?"
         state_updates = {
             "slots": slots,
@@ -490,13 +553,24 @@ def _handle_shipping(user_text: str, intent: str, text_lower: str, state: dict, 
             "last_intent": intent
         }
     else:
-        reply = "¿En qué ciudad o municipio sería el envío?"
-        state_updates = {
-            "slots": slots,
-            "last_question": "city",
-            "asked_questions": {**asked_questions, "city": datetime.utcnow().isoformat()},
-            "last_intent": intent
-        }
+        # Solo preguntar si no se ha preguntado antes o si fue hace más de 2 turnos
+        city_asked_count = sum(1 for q in asked_questions.keys() if "city" in q.lower())
+        if city_asked_count >= 2:
+            # Ya preguntamos 2 veces, no insistir más
+            reply = "Perfecto. ¿Te separo una máquina o quieres ver fotos primero?"
+            state_updates = {
+                "slots": slots,
+                "stage": "photos",
+                "last_intent": intent
+            }
+        else:
+            reply = "¿En qué ciudad o municipio sería el envío?"
+            state_updates = {
+                "slots": slots,
+                "last_question": "city",
+                "asked_questions": {**asked_questions, f"city_{city_asked_count + 1}": datetime.utcnow().isoformat()},
+                "last_intent": intent
+            }
     
     return {
         "reply_text": reply,
@@ -662,6 +736,68 @@ def _handle_sell_machine(user_text: str, text_lower: str, state: dict) -> Dict[s
         "reply_assets": None,
         "state_updates": state_updates,
         "decision_path": "sell_machine_handled"
+    }
+
+
+def _handle_handoff_schedule(user_text: str, intent: str, text_lower: str, state: dict) -> Dict[str, Any]:
+    """Maneja agendamiento de llamada/cita. Evita dead-end."""
+    slots = state.get("slots", {})
+    
+    # Detectar confirmación de llamada
+    confirm_keywords = ["sí", "si", "ok", "dale", "claro", "perfecto", "bueno", "sí por favor", "si por favor"]
+    is_confirmation = any(kw in text_lower for kw in confirm_keywords)
+    
+    if is_confirmation:
+        # Ya tenemos día, ahora preguntar franja horaria
+        if not slots.get("best_time"):
+            reply = "Listo 🙌 ¿Te llamamos al mismo número de WhatsApp? ¿Hoy o mañana? ¿Mañana o tarde?"
+            state_updates = {
+                "slots": {**slots, "prefer_call": True},
+                "last_question": "best_time",
+                "last_intent": intent
+            }
+        else:
+            # Ya tenemos día y hora, confirmar
+            reply = "Perfecto, ya quedó. En breve te escribimos para confirmar."
+            state_updates = {
+                "slots": slots,
+                "stage": "visit",
+                "last_intent": intent
+            }
+            # TODO: Generar handoff_summary para humano si corresponde
+    else:
+        # Detectar franja horaria
+        if "mañana" in text_lower or "mañana" in text_lower:
+            time_slot = "mañana"
+        elif "tarde" in text_lower:
+            time_slot = "tarde"
+        elif "hoy" in text_lower:
+            time_slot = "hoy"
+        else:
+            time_slot = None
+        
+        if time_slot:
+            slots["best_time"] = time_slot
+            reply = "Perfecto, ya quedó. En breve te escribimos para confirmar."
+            state_updates = {
+                "slots": slots,
+                "stage": "visit",
+                "last_intent": intent
+            }
+        else:
+            # No entendió, re-preguntar una vez más
+            reply = "¿Te queda mejor mañana o tarde?"
+            state_updates = {
+                "slots": slots,
+                "last_question": "best_time",
+                "last_intent": intent
+            }
+    
+    return {
+        "reply_text": reply,
+        "reply_assets": None,
+        "state_updates": state_updates,
+        "decision_path": "handoff_schedule_handled"
     }
 
 

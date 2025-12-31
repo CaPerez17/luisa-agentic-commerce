@@ -125,15 +125,17 @@ def classify_triage_intent(text: str) -> Tuple[str, float, bool]:
     return "other", 0.3, True
 
 
-def generate_triage_greeting(state: Optional[dict] = None) -> str:
+def generate_triage_greeting(state: Optional[dict] = None, ambiguous_turns: int = 0) -> str:
     """
     Genera el mensaje de triage para mensajes ambiguos.
+    Versión humana: saludo + pregunta abierta guiada.
     
     Args:
         state: Estado conversacional (si existe, puede retomar contexto)
+        ambiguous_turns: Número de turnos ambiguos consecutivos
     
     Returns:
-        Mensaje de triage con opciones numeradas
+        Mensaje de triage humano (sin menú numerado si es primer turno)
     """
     # Si hay estado previo reciente, retomar con contexto
     if state and state.get("last_intent"):
@@ -147,14 +149,15 @@ def generate_triage_greeting(state: Optional[dict] = None) -> str:
                 return f"¡De una! 😊 ¿Seguimos con las {product_type}es o necesitas repuesto/soporte?"
             return "¡De una! 😊 ¿Seguimos con las máquinas o necesitas repuesto/soporte?"
     
-    # Triage inicial (mensaje ambiguo)
-    return (
-        "¡Hola! 😊 ¿Qué necesitas hoy:\n"
-        "1) Comprar máquina\n"
-        "2) Repuestos\n"
-        "3) Soporte/garantía\n"
-        "4) Asesoría para empezar"
-    )
+    # Si es el primer turno ambiguo: saludo humano + pregunta abierta
+    if ambiguous_turns == 0:
+        return (
+            "¡Hola! 😊 Soy Luisa del Almacén El Sastre. "
+            "Cuéntame qué necesitas y te ayudo (máquinas, repuestos o soporte)."
+        )
+    
+    # Si lleva 2+ turnos ambiguos: ofrecer opciones en lenguaje humano
+    return "¿Es por máquinas, repuestos o soporte/garantía?"
 
 
 def parse_triage_response(text: str) -> Optional[str]:
