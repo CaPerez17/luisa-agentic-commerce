@@ -240,6 +240,25 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        # Tabla para idempotencia de mensajes WhatsApp
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wa_processed_messages (
+                message_id TEXT PRIMARY KEY,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                phone_from TEXT,
+                text_preview TEXT
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_wa_processed_received 
+            ON wa_processed_messages(received_at)
+        """)
+        
+        # Configurar SQLite para mejor concurrencia
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=3000")
+
 
 # ============================================================================
 # FUNCIONES DE ACCESO A DATOS
@@ -418,3 +437,37 @@ def save_handoff(
             (conversation_id, reason, priority, summary, suggested_response, customer_name, routed_team)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (conversation_id, reason, priority, summary, suggested_response, customer_name, routed_team))
+
+
+def mark_wa_message_processed(message_id: str, phone_from: str, text_preview: str = "") -> bool:
+    """
+    Marca un mensaje de WhatsApp como procesado (idempotencia).
+    
+    Returns:
+        True si el mensaje es nuevo (se insertó), False si ya existía (duplicado)
+    """
+    if not message_id:
+        return False
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # INSERT OR IGNORE: si ya existe, no hace nada y retorna 0 cambios
+        cursor.execute("""
+            INSERT OR IGNORE INTO wa_processed_messages (message_id, phone_from, text_preview)
+            VALUES (?, ?, ?)
+        """, (message_id, phone_from[-4:] if phone_from else "", text_preview[:50] if text_preview else ""))
+        
+        # Si se insertó, lastrowid será el rowid del nuevo registro
+        # Si no se insertó (ya existía), lastrowid será 0
+        return cursor.rowcount > 0
+
+
+def is_wa_message_processed(message_id: str) -> bool:
+    """Verifica si un mensaje ya fue procesado."""
+    if not message_id:
+        return False
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM wa_processed_messages WHERE message_id = ?", (message_id,))
+        return cursor.fetchone() is not None
