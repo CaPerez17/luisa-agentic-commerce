@@ -10,6 +10,7 @@ from datetime import datetime
 from app.services.intent_service import analyze_intent
 from app.services.context_service import extract_context_from_history
 from app.services.asset_service import select_catalog_asset
+from app.services.sales_playbook import craft_reply, pick_one_question, handle_objection
 from app.logging_config import logger
 
 
@@ -83,21 +84,32 @@ def next_action(
             "decision_path": "triage_greeting"
         }
     
-    # Si hay intención clara (no ambiguo), route directo
+    # Verificar objeciones primero
+    objection_response = handle_objection(text_lower, state)
+    if objection_response:
+        return {
+            "reply_text": objection_response["reply_text"],
+            "reply_assets": None,
+            "state_updates": {
+                "stage": objection_response.get("stage_update", state.get("stage")),
+                **objection_response.get("slot_updates", {})
+            },
+            "decision_path": objection_response.get("decision_path", "objection_handled")
+        }
+    
+    # Si hay intención clara (no ambiguo), usar playbook
     if not is_ambiguous and triage_confidence >= 0.5:
-        if triage_intent == "buy_machine":
-            # Continuar con flujo normal de compra
-            pass  # Caer al flujo normal
-        elif triage_intent == "spare_parts":
-            return _handle_spare_parts(user_text, text_lower, state)
-        elif triage_intent == "tech_support":
-            return _handle_support_request(user_text, state)
-        elif triage_intent == "business_advice":
-            return _handle_business_advice(user_text, text_lower, state, context)
-        elif triage_intent == "faq_hours_location":
-            return _handle_faq_hours_location(user_text, text_lower, state)
-        elif triage_intent == "sell_machine":
-            return _handle_sell_machine(user_text, text_lower, state)
+        playbook_result = craft_reply(triage_intent, state, user_text, context)
+        if playbook_result:
+            return {
+                "reply_text": playbook_result["reply_text"],
+                "reply_assets": None,
+                "state_updates": {
+                    "stage": playbook_result.get("stage_update", state.get("stage")),
+                    **playbook_result.get("slot_updates", {})
+                },
+                "decision_path": playbook_result.get("decision_path", "playbook_handled")
+            }
     
     # Detectar cambio de intención
     intent_changed = _detect_intent_change(intent, text_lower, state)
@@ -382,15 +394,23 @@ def _handle_pricing(user_text: str, intent: str, text_lower: str, state: dict, c
             "• Industriales: desde $1.230.000\n\n"
         )
     
-    # Pregunta siguiente (máximo 1)
-    if not slots.get("use_case") and product_type == "industrial":
+    # Usar playbook para elegir mejor pregunta
+    next_q = pick_one_question("buy_machine", state)
+    if next_q == "use_case":
         reply += "\n\n¿Qué vas a fabricar: ropa, gorras, calzado o accesorios?"
         state_updates = {
             "slots": slots,
             "last_question": "use_case",
             "last_intent": intent
         }
-    elif not slots.get("city_filled") and not context.get("ciudad"):
+    elif next_q == "qty":
+        reply += "\n\n¿Cuántas unidades al mes aprox?"
+        state_updates = {
+            "slots": slots,
+            "last_question": "qty",
+            "last_intent": intent
+        }
+    elif next_q == "city" and not slots.get("city_filled"):
         # ANTI-REPETICIÓN: Solo preguntar si NO está lleno
         reply += "\n\n¿En qué ciudad te encuentras para coordinar el envío?"
         state_updates = {
@@ -458,14 +478,38 @@ def _handle_visit(user_text: str, intent: str, text_lower: str, state: dict, con
     # Si ya está en stage visit y responde sobre cuándo venir
     if "hoy" in text_lower or "mañana" in text_lower or "mañana" in text_lower or "lunes" in text_lower or "martes" in text_lower:
         day = "hoy" if "hoy" in text_lower else ("mañana" if "mañana" in text_lower or "mañana" in text_lower else "pronto")
-        reply = f"Perfecto, te esperamos {day}. ¿Te llamamos al mismo número de WhatsApp para confirmar?"
         
-        state_updates = {
-            "slots": {**slots, "visit_day": day},
-            "stage": "handoff_schedule",
-            "last_question": "confirm_call",
-            "last_intent": intent
-        }
+        # Si ya tiene día, pedir franja horaria
+        if slots.get("visit_day"):
+            if "mañana" in text_lower or "mañana" in text_lower:
+                time_slot = "mañana"
+            elif "tarde" in text_lower:
+                time_slot = "tarde"
+            else:
+                time_slot = None
+            
+            if time_slot:
+                reply = f"Perfecto, {day} en la {time_slot}. Te esperamos 🙌"
+                state_updates = {
+                    "slots": {**slots, "visit_day": day, "visit_time": time_slot},
+                    "stage": "visit",
+                    "last_intent": intent
+                }
+            else:
+                reply = f"Perfecto, {day}. ¿Mañana o tarde?"
+                state_updates = {
+                    "slots": {**slots, "visit_day": day},
+                    "last_question": "visit_time",
+                    "last_intent": intent
+                }
+        else:
+            reply = f"Perfecto, te esperamos {day}. ¿Te llamamos al mismo número de WhatsApp para confirmar?"
+            state_updates = {
+                "slots": {**slots, "visit_day": day},
+                "stage": "handoff_schedule",
+                "last_question": "confirm_call",
+                "last_intent": intent
+            }
         
         return {
             "reply_text": reply,
@@ -533,9 +577,12 @@ def _extract_city_from_text(text: str) -> Optional[str]:
 
 
 def _handle_shipping(user_text: str, intent: str, text_lower: str, state: dict, context: dict) -> Dict[str, Any]:
-    """Maneja etapa de envío."""
+    """Maneja etapa de envío. Mejora: pedir dirección SOLO cuando ya eligió máquina."""
     slots = state.get("slots", {})
     asked_questions = state.get("asked_questions", {})
+    product_type = slots.get("product_type")
+    use_case = slots.get("use_case")
+    qty = slots.get("qty")
     
     # Extraer ciudad del texto
     city = _extract_city_from_text(user_text)
@@ -546,14 +593,31 @@ def _handle_shipping(user_text: str, intent: str, text_lower: str, state: dict, 
     
     # ANTI-REPETICIÓN: Si ya tiene ciudad, NO preguntar de nuevo
     if slots.get("city_filled") and slots.get("city"):
-        reply = f"Perfecto, envío a {slots['city']}. ¿Te separo una máquina o quieres ver fotos primero?"
-        state_updates = {
-            "slots": slots,
-            "stage": "photos",
-            "last_intent": intent
-        }
+        # Solo pedir dirección si ya eligió máquina (tiene product_type + use_case o qty)
+        if (product_type and use_case) or qty:
+            if not slots.get("direccion"):
+                reply = f"Perfecto, envío a {slots['city']}. ¿Dirección completa para el envío?"
+                state_updates = {
+                    "slots": slots,
+                    "last_question": "direccion",
+                    "last_intent": intent
+                }
+            else:
+                reply = f"Perfecto, envío a {slots['city']}. ¿Te separo una máquina o quieres ver fotos primero?"
+                state_updates = {
+                    "slots": slots,
+                    "stage": "photos",
+                    "last_intent": intent
+                }
+        else:
+            reply = f"Perfecto, envío a {slots['city']}. ¿Te separo una máquina o quieres ver fotos primero?"
+            state_updates = {
+                "slots": slots,
+                "stage": "photos",
+                "last_intent": intent
+            }
     else:
-        # Solo preguntar si no se ha preguntado antes o si fue hace más de 2 turnos
+        # Solo preguntar ciudad si no se ha preguntado antes o si fue hace más de 2 turnos
         city_asked_count = sum(1 for q in asked_questions.keys() if "city" in q.lower())
         if city_asked_count >= 2:
             # Ya preguntamos 2 veces, no insistir más
@@ -592,15 +656,16 @@ def _handle_photos(user_text: str, intent: str, text_lower: str, state: dict, co
     if asset and not handoff_required:
         assets.append(asset)
     
-    # Si el usuario está confuso
-    if "no sé" in text_lower or "cual" in text_lower or "cuál" in text_lower:
+    # Si el usuario está indeciso, usar cierre de conversión
+    if "no sé" in text_lower or "cual" in text_lower or "cuál" in text_lower or "indeciso" in text_lower:
         if product_type == "industrial":
             reply = (
                 "Te recomiendo 2 opciones:\n\n"
                 "• KINGTER KT-D3: $1.230.000 - Ideal para gorras y ropa\n"
                 "• KANSEW KS-8800: $1.300.000 - Más robusta, para producción constante\n\n"
-                "¿Te separo una o quieres ver fotos de ambas?"
             )
+            # Cierre de conversión: elegir una dimensión
+            reply += "¿Buscas gastar menos hoy o una más robusta para crecer?"
         else:
             reply = (
                 "Para casa te recomiendo empezar con una familiar básica ($400.000) o una intermedia ($600.000). "
