@@ -18,7 +18,9 @@ from app.models.database import (
     get_conversation_mode,
     set_conversation_mode,
     mark_wa_message_processed,
-    is_wa_message_processed
+    is_wa_message_processed,
+    get_conversation_state,
+    save_conversation_state
 )
 from app.services.whatsapp_service import (
     parse_webhook_message,
@@ -28,6 +30,8 @@ from app.services.whatsapp_service import (
     get_phone_conversation_id,
     analyze_webhook_event
 )
+from app.services.sales_dialogue import next_action
+from app.services.humanizer import humanize_response_sync
 from app.services.rate_limit import allow as rl_allow, remaining as rl_remaining
 from app.services.context_service import extract_context_from_history
 from app.services.intent_service import analyze_intent
@@ -293,9 +297,13 @@ async def _process_whatsapp_message(
             # Analizar intención
             intent_result = analyze_intent(text, history)
             tracer.intent = intent_result.get("intent")
+            intent = tracer.intent or ""
             
             # Extraer contexto
             context = extract_context_from_history(history)
+            
+            # Obtener estado conversacional
+            state = get_conversation_state(phone_from)
             
             # Verificar si requiere handoff
             from app.services.handoff_service import should_handoff as check_handoff
@@ -325,15 +333,51 @@ async def _process_whatsapp_message(
                 # Enviar notificación interna
                 if notification_text:
                     await send_internal_notification(notification_text)
+                
+                # Actualizar estado
+                state["handoff_needed"] = True
+                state["last_intent"] = intent
+                save_conversation_state(phone_from, state)
             
                 # Marcar conversación como pendiente de humano
                 # (pero NO silenciar inmediatamente, dar HANDOFF_COOLDOWN_MINUTES)
                 
             else:
-                # Generar respuesta normal
-                # Por ahora usamos una respuesta genérica hasta integrar generate_response completo
-                # TODO: Integrar con la lógica completa de generate_response del main.py
-                response_text = _generate_whatsapp_response(text, context, intent_result, history)
+                # SALES DIALOGUE MANAGER: Generar respuesta comercial humana
+                dialogue_result = next_action(
+                    user_text=text,
+                    intent=intent,
+                    state=state,
+                    history=history,
+                    context=context
+                )
+                
+                response_text = dialogue_result.get("reply_text", "")
+                reply_assets = dialogue_result.get("reply_assets")
+                state_updates = dialogue_result.get("state_updates", {})
+                decision_path = dialogue_result.get("decision_path", "dialogue_handled")
+                
+                # Actualizar estado conversacional
+                updated_state = {**state, **state_updates}
+                updated_state["last_message_ts"] = timestamp
+                updated_state["last_intent"] = intent
+                save_conversation_state(phone_from, updated_state)
+                
+                # HUMANIZER: Opcionalmente humanizar la respuesta
+                humanized_text, humanize_meta = humanize_response_sync(response_text, updated_state)
+                if humanize_meta.get("humanized"):
+                    response_text = humanized_text
+                    tracer.decision_path = f"{decision_path}->humanized"
+                else:
+                    tracer.decision_path = decision_path
+                
+                # Si hay assets, prepararlos para envío (TODO: implementar envío de imágenes)
+                if reply_assets:
+                    logger.info(
+                        "Assets seleccionados para respuesta",
+                        asset_count=len(reply_assets),
+                        asset_ids=[a.get("image_id") for a in reply_assets[:3]]
+                    )
             
             tracer.response_text = response_text
             
@@ -342,11 +386,17 @@ async def _process_whatsapp_message(
             
             if success:
                 save_message(conversation_id, response_text, "luisa")
+                # Obtener stage actualizado para logging
+                current_stage = state.get("stage", "unknown")
+                if 'updated_state' in locals():
+                    current_stage = updated_state.get("stage", current_stage)
+                
                 logger.info(
                     "Mensaje WhatsApp procesado y respondido",
                     message_id=message_id[:20] if message_id else "unknown",
                     phone=phone_from[-4:],
-                    intent=tracer.intent
+                    intent=tracer.intent,
+                    stage=current_stage
                 )
             else:
                 tracer.error = "Error enviando respuesta"

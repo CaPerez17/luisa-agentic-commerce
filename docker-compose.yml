@@ -17,6 +17,8 @@ services:
       - ./data:/app/data
       # Assets del catálogo (imágenes montadas desde host)
       - ./backend/assets/catalog:/app/assets/catalog:ro
+      # Directorio outbox para archivos temporales
+      - ./outbox:/outbox
     ports:
       - "127.0.0.1:8000:8000"
     networks:

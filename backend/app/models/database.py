@@ -271,6 +271,20 @@ def init_db():
             ON wa_outbox_dedup(created_at)
         """)
         
+        # Tabla para estado conversacional (Sales Dialogue Manager)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wa_conversations (
+                phone_from TEXT PRIMARY KEY,
+                state_json TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_wa_conversations_updated 
+            ON wa_conversations(updated_at)
+        """)
+        
         # Configurar SQLite para mejor concurrencia
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=3000")
@@ -543,3 +557,75 @@ def cleanup_expired_outbox_dedup():
             DELETE FROM wa_outbox_dedup 
             WHERE (julianday('now') - julianday(created_at)) * 86400 > ttl_seconds
         """)
+
+
+def get_conversation_state(phone_from: str) -> dict:
+    """
+    Obtiene el estado conversacional de un usuario.
+    
+    Returns:
+        Dict con state_json parseado o estado por defecto si no existe
+    """
+    import json
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT state_json FROM wa_conversations WHERE phone_from = ?",
+            (phone_from,)
+        )
+        row = cursor.fetchone()
+        
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except:
+                return _default_conversation_state()
+        
+        return _default_conversation_state()
+
+
+def save_conversation_state(phone_from: str, state: dict) -> None:
+    """
+    Guarda el estado conversacional de un usuario.
+    
+    Args:
+        phone_from: Número de teléfono (clave primaria)
+        state: Dict con el estado (se serializa a JSON)
+    """
+    import json
+    
+    state_json = json.dumps(state, ensure_ascii=False)
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO wa_conversations (phone_from, state_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (phone_from, state_json))
+
+
+def reset_conversation_state(phone_from: str) -> None:
+    """Resetea el estado conversacional a valores por defecto."""
+    save_conversation_state(phone_from, _default_conversation_state())
+
+
+def _default_conversation_state() -> dict:
+    """Retorna el estado conversacional por defecto."""
+    return {
+        "stage": "discovery",  # discovery | pricing | visit | shipping | photos | support
+        "last_question": None,
+        "asked_questions": {},
+        "slots": {
+            "product_type": None,  # "familiar" | "industrial"
+            "use_case": None,  # "ropa" | "gorras" | "calzado" | "accesorios"
+            "city": None,
+            "qty": None,
+            "visit_or_delivery": None,  # "visit" | "delivery"
+            "budget": None
+        },
+        "last_intent": None,
+        "last_message_ts": None,
+        "handoff_needed": False,
+        "pending_question": None
+    }
