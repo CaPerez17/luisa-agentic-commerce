@@ -54,7 +54,7 @@ class TestGetCatalogItem:
         """Obtener item inexistente retorna None."""
         item = get_catalog_item("I999")
         assert item is None
-
+    
 
 class TestSelectCatalogAsset:
     """Tests para select_catalog_asset."""

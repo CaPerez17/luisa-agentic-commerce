@@ -42,7 +42,7 @@ class StructuredLogger:
         if extra:
             base.update(extra)
         return base
-    
+
     def info(self, message: str, **kwargs):
         """Log nivel INFO con datos estructurados."""
         extra = self._format_extra(kwargs)
@@ -64,7 +64,7 @@ class StructuredLogger:
         extra = self._format_extra(kwargs)
         if LOG_FORMAT == "json":
             self.logger.error(json.dumps({"level": "ERROR", "message": message, **extra}))
-        else:
+    else:
             self.logger.error(f"{message} | {extra}")
     
     def debug(self, message: str, **kwargs):

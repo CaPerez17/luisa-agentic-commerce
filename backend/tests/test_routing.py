@@ -90,7 +90,7 @@ class TestRouteCase:
             "mi máquina necesita reparación"
         )
         assert team == Team.TECNICA
-
+    
 
 class TestBuildInternalNotification:
     """Tests para build_internal_notification."""

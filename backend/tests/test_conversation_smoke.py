@@ -25,7 +25,7 @@ class TestApiSmoke:
     
     def test_new_modules_available(self):
         """Los nuevos módulos están disponibles."""
-        try:
+    try:
             from main import NEW_MODULES_AVAILABLE
             # Puede ser True o False dependiendo de la configuración
             assert NEW_MODULES_AVAILABLE in [True, False]
@@ -136,11 +136,11 @@ class TestGenerateResponse:
 
         input_text = "Tenemos máquinas industriales. ¿Cuál te interesa?"
         result = ensure_next_step_question(input_text, "buscar_maquina_industrial", {})
-
+        
         # Debe quedar igual
         assert result == input_text
         assert result.count("?") == 1
-
+    
     def test_postprocesador_no_modifica_saludo(self):
         """No modifica respuestas de saludo."""
         from app.services.response_service import ensure_next_step_question

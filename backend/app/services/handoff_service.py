@@ -393,7 +393,7 @@ def generate_handoff_message(text: str, reason: str, priority: str, ciudad: Opti
             "Para coordinar el envío e instalación a tu ubicación, "
             "lo mejor es que uno de nuestros asesores te contacte directamente.\n\n"
             "¿Prefieres que te llamemos para agendar la entrega e instalación?"
-        )
+            )
     
     # Handoff por decisión de compra
     if "cierre" in reason.lower() or "compra" in reason.lower():
@@ -426,5 +426,5 @@ def generate_handoff_message(text: str, reason: str, priority: str, ciudad: Opti
             "te acompañe directamente.\n\n"
             "¿Prefieres que te llamemos para agendar una cita?"
         )
-    
+
     return "Perfecto, lo estoy revisando con nuestro equipo y te respondo en breve."

@@ -35,17 +35,17 @@ class InteractionTracer:
     decision_path: Optional[str] = None
     response_len_chars: int = field(default=0)
     error_message: Optional[str] = None
-
+    
     _start_time: float = field(default=0.0, repr=False)
     _latency_ms: float = field(default=0.0, repr=False)
     _latency_us: int = field(default=0, repr=False)
-
+    
     def start(self) -> "InteractionTracer":
         """Inicia el timer con perf_counter para mayor precisión."""
         import time
         self._start_time = time.perf_counter()
         return self
-
+    
     def stop(self) -> float:
         """Detiene el timer y retorna latencia en ms con 1 decimal."""
         import time
@@ -54,12 +54,12 @@ class InteractionTracer:
             self._latency_us = int(elapsed_seconds * 1_000_000)  # Microsegundos
             self._latency_ms = round(elapsed_seconds * 1000, 1)  # Milisegundos con 1 decimal
         return self._latency_ms
-
+    
     @property
     def latency_ms(self) -> float:
         """Retorna la latencia medida en ms con 1 decimal."""
         return self._latency_ms
-
+    
     @property
     def latency_us(self) -> int:
         """Retorna la latencia medida en microsegundos."""

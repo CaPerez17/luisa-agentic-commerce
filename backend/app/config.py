@@ -43,7 +43,7 @@ OPENAI_MAX_INPUT_CHARS = int(os.getenv("OPENAI_MAX_INPUT_CHARS", "1200"))
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.4"))
 OPENAI_TIMEOUT_SECONDS = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "8"))
 OPENAI_CACHEABLE_INTENTS = os.getenv(
-    "OPENAI_CACHEABLE_INTENTS",
+    "OPENAI_CACHEABLE_INTENTS", 
     "horario,direccion,envios,pagos,catalogo"
 ).split(",")
 

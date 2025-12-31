@@ -286,7 +286,7 @@ class IntentAnalyzer:
                     if " " in pattern:
                         score += 2  # Frases completas valen más
                     else:
-                        score += 1
+                    score += 1
                     matches.append(pattern)
             
             if score > 0:
@@ -433,8 +433,8 @@ class IntentAnalyzer:
                 context["tipo_maquina"] = "industrial"
                 context["categoria"] = "fileteadora_industrial"
             else:
-                context["tipo_maquina"] = "familiar"
-                context["categoria"] = "fileteadora_familiar"
+            context["tipo_maquina"] = "familiar"
+            context["categoria"] = "fileteadora_familiar"
         elif any(word in text_lower for word in ["industrial", "industriales", "taller", "producción", "produccion", "emprendimiento", "negocio"]):
             context["tipo_maquina"] = "industrial"
             context["categoria"] = "recta_industrial_mecatronica"

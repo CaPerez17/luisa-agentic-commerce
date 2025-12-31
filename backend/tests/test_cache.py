@@ -63,7 +63,7 @@ class TestLRUCache:
         assert stats["hits"] == 1
         assert stats["misses"] == 1
         assert stats["size"] == 1
-
+    
 
 class TestCacheIntegration:
     """Tests de integración del cache con el sistema."""

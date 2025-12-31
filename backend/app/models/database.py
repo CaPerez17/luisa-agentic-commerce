@@ -172,7 +172,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_traces_created 
             ON interaction_traces(created_at)
         """)
-        
+
         # Agregar columnas nuevas a tablas existentes si no existen
         try:
             cursor.execute("ALTER TABLE conversations ADD COLUMN conversation_mode TEXT DEFAULT 'AI_ACTIVE'")
@@ -301,7 +301,7 @@ def get_conversation_history(conversation_id: str, limit: int = 20) -> List[Dict
         cursor.execute("""
             SELECT text, sender, timestamp 
             FROM messages 
-            WHERE conversation_id = ? 
+            WHERE conversation_id = ?
             ORDER BY timestamp ASC
             LIMIT ?
         """, (conversation_id, limit))

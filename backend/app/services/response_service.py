@@ -258,7 +258,7 @@ class ResponseGenerator:
             # Cachear si es FAQ
             if is_cacheable_query(message, intent):
                 cache_response(message, openai_response)
-            
+        
             return openai_response, metadata
         
         # Si llegamos aquí, no tenemos respuesta
@@ -430,7 +430,7 @@ def _build_decision_path(
         return "->".join(path_parts)
 
     path_parts.append("cache_miss")
-
+    
     if asset_selected:
         path_parts.append("asset_selected")
     else:
@@ -448,7 +448,7 @@ def _build_decision_path(
 
     if question_appended:
         path_parts.append("question_appended")
-
+    
     return "->".join(path_parts)
 
 
@@ -540,13 +540,13 @@ def build_response(
             if message_type == MessageType.NON_BUSINESS:
                 result["text"] = get_response_for_message_type(message_type, text)
                 tracer.decision_path = "->non_business_handled"
-                return result
-
+        return result
+    
             if not is_business:
                 # Respuesta fija para fuera del negocio
                 result["text"] = get_off_topic_response()
-                return result
-
+            return result
+    
             # Paso 2: Intent y contexto
             intent_result = analyze_intent(text, history)
             tracer.intent = intent_result.get("intent")
@@ -672,7 +672,7 @@ def build_response(
         if result["text"]:
             save_message(conversation_id, result["text"], "luisa")
     
-        return result
+    return result
 
 
 def _should_select_asset(intent: str, text: str, context: dict) -> bool:

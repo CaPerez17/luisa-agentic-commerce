@@ -132,7 +132,7 @@ def classify_message_type(text: str) -> MessageType:
     # Contar señales de blacklist (palabras completas, no substrings)
     words_in_text = set(text_normalized.split())
     blacklist_count = sum(1 for signal in blacklist_signals if signal in words_in_text)
-
+    
     # Si hay señales claras de blacklist -> NON_BUSINESS
     if blacklist_count >= 2 or any(signal in text_normalized for signal in [
         "cómo hago un", "como hago un", "ayuda con", "necesito ayuda con", "problema con",

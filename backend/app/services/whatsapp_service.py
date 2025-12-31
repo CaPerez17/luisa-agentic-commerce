@@ -68,21 +68,21 @@ async def send_whatsapp_message(
     masked_phone = _mask_phone(phone)
 
     for attempt in range(retry_count + 1):
-        try:
+    try:
             async with httpx.AsyncClient(timeout=8.0) as client:
-                response = await client.post(url, headers=headers, json=payload)
-                
-                if response.status_code == 200:
+            response = await client.post(url, headers=headers, json=payload)
+            
+            if response.status_code == 200:
                     data = response.json()
                     message_id = data.get("messages", [{}])[0].get("id")
-                    logger.info(
+                logger.info(
                         "Mensaje WhatsApp enviado",
                         to=masked_phone,
                         message_id=message_id
-                    )
+                )
                     return True, message_id
-                else:
-                    error_data = response.json()
+            else:
+                error_data = response.json()
                     error_msg = error_data.get("error", {}).get("message", "Error desconocido")
                     logger.warning(
                         "Error enviando WhatsApp",
@@ -94,11 +94,11 @@ async def send_whatsapp_message(
                     
                     # No reintentar en errores de validación
                     if response.status_code in [400, 401, 403]:
-                        return False, error_msg
-        
-        except httpx.TimeoutException:
+                return False, error_msg
+                
+    except httpx.TimeoutException:
             logger.warning("Timeout enviando WhatsApp", to=masked_phone, attempt=attempt + 1)
-        except Exception as e:
+    except Exception as e:
             logger.error("Error inesperado enviando WhatsApp", error=str(e), attempt=attempt + 1)
         
         # Esperar antes de reintentar
@@ -164,7 +164,7 @@ def parse_webhook_message(body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "timestamp": timestamp,
             "contact_name": contact_name
         }
-    
+        
     except Exception as e:
         logger.error("Error parseando webhook WhatsApp", error=str(e))
         return None

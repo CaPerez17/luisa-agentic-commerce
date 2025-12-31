@@ -180,7 +180,7 @@ async def receive_webhook(request: Request):
             # Enviar notificación interna
             if notification_text:
                 await send_internal_notification(notification_text)
-            
+        
             # Marcar conversación como pendiente de humano
             # (pero NO silenciar inmediatamente, dar HANDOFF_COOLDOWN_MINUTES)
             
