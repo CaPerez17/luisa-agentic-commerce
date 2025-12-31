@@ -25,7 +25,7 @@ class TestApiSmoke:
     
     def test_new_modules_available(self):
         """Los nuevos módulos están disponibles."""
-    try:
+        try:
             from main import NEW_MODULES_AVAILABLE
             # Puede ser True o False dependiendo de la configuración
             assert NEW_MODULES_AVAILABLE in [True, False]

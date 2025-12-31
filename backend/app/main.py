@@ -46,7 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(api.router)
     
     if WHATSAPP_ENABLED:
-    app.include_router(whatsapp.router)
+        app.include_router(whatsapp.router)
         logger.info("WhatsApp webhook habilitado")
     
     # Health check

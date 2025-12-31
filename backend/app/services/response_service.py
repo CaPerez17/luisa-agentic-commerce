@@ -250,14 +250,14 @@ class ResponseGenerator:
             )
             
             if openai_response:
-            metadata["openai_called"] = True
-            metadata["prompt_version"] = PROMPT_VERSION
-            metadata["latency_ms"] = openai_latency
-            self.openai_calls += 1
-            
-            # Cachear si es FAQ
-            if is_cacheable_query(message, intent):
-                cache_response(message, openai_response)
+                metadata["openai_called"] = True
+                metadata["prompt_version"] = PROMPT_VERSION
+                metadata["latency_ms"] = openai_latency
+                self.openai_calls += 1
+                
+                # Cachear si es FAQ
+                if is_cacheable_query(message, intent):
+                    cache_response(message, openai_response)
         
             return openai_response, metadata
         
@@ -540,12 +540,12 @@ def build_response(
             if message_type == MessageType.NON_BUSINESS:
                 result["text"] = get_response_for_message_type(message_type, text)
                 tracer.decision_path = "->non_business_handled"
-        return result
+                return result
     
             if not is_business:
                 # Respuesta fija para fuera del negocio
                 result["text"] = get_off_topic_response()
-            return result
+                return result
     
             # Paso 2: Intent y contexto
             intent_result = analyze_intent(text, history)
@@ -566,92 +566,92 @@ def build_response(
             handoff_required = False  # Inicializar
             if _should_select_asset(tracer.intent, text, context):
                 catalog_item, handoff_required = select_catalog_asset(text, context)
-            if catalog_item:
-                tracer.selected_asset_id = catalog_item.get("image_id")
-                result["asset"] = {
-                    "image_id": catalog_item["image_id"],
-                    "asset_url": f"/api/assets/{catalog_item['image_id']}",
-                    "type": "image"
-                }
-                asset_selected = True
+                if catalog_item:
+                    tracer.selected_asset_id = catalog_item.get("image_id")
+                    result["asset"] = {
+                        "image_id": catalog_item["image_id"],
+                        "asset_url": f"/api/assets/{catalog_item['image_id']}",
+                        "type": "image"
+                    }
+                    asset_selected = True
 
             # Paso 5: Verificar handoff
             handoff_triggered = False
             if handoff_required:
-            # Procesar handoff
-            handoff_success, notification_text, team = process_handoff(
-                conversation_id=conversation_id,
-                text=text,
-                context=context,
-                customer_phone=customer_number,
-                history=history
-            )
-            if handoff_success:
-                tracer.routed_team = team.value if team else None
-                result["routed_notification"] = {
-                    "team": team.value if team else "comercial",
-                    "text": notification_text
-                }
-                handoff_triggered = True
+                # Procesar handoff
+                handoff_success, notification_text, team = process_handoff(
+                    conversation_id=conversation_id,
+                    text=text,
+                    context=context,
+                    customer_phone=customer_number,
+                    history=history
+                )
+                if handoff_success:
+                    tracer.routed_team = team.value if team else None
+                    result["routed_notification"] = {
+                        "team": team.value if team else "comercial",
+                        "text": notification_text
+                    }
+                    handoff_triggered = True
 
             # Paso 6: Generar respuesta de texto
             if not result["text"]:
-            # Lógica especial para saludos
-            if tracer.intent == "saludo":
-                result["text"] = "¡Hola! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
-            else:
-                # Determinar si se puede llamar OpenAI con gating estricto
-                can_call_openai = should_call_openai(
-                    intent=tracer.intent,
-                    message_type=message_type,
-                    text=text,
-                    context=context,
-                    cache_hit=tracer.cache_hit
-                )
-
-                if can_call_openai:
-                    # Llamar OpenAI con límites de input
-                    text_for_openai = text[:OPENAI_MAX_INPUT_CHARS]
-                    history_for_openai = history[-6:] if history else []  # Máximo 6 turnos
-
-                    openai_response, openai_latency = generate_openai_response_sync(
-                        text_for_openai, context, history_for_openai
+                # Lógica especial para saludos
+                if tracer.intent == "saludo":
+                    result["text"] = "¡Hola! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
+                else:
+                    # Determinar si se puede llamar OpenAI con gating estricto
+                    can_call_openai = should_call_openai(
+                        intent=tracer.intent,
+                        message_type=message_type,
+                        text=text,
+                        context=context,
+                        cache_hit=tracer.cache_hit
                     )
 
-                    if openai_response:
-                        tracer.openai_called = True
-                        tracer.prompt_version = PROMPT_VERSION
-                        result["text"] = openai_response
+                    if can_call_openai:
+                        # Llamar OpenAI con límites de input
+                        text_for_openai = text[:OPENAI_MAX_INPUT_CHARS]
+                        history_for_openai = history[-6:] if history else []  # Máximo 6 turnos
 
-                        # Cachear si es FAQ
-                        if is_cacheable_query(text, tracer.intent):
-                            cache_response(text, result["text"])
+                        openai_response, openai_latency = generate_openai_response_sync(
+                            text_for_openai, context, history_for_openai
+                        )
+
+                        if openai_response:
+                            tracer.openai_called = True
+                            tracer.prompt_version = PROMPT_VERSION
+                            result["text"] = openai_response
+
+                            # Cachear si es FAQ
+                            if is_cacheable_query(text, tracer.intent):
+                                cache_response(text, result["text"])
+                        else:
+                            # OpenAI falló, marcar como bloqueado por error
+                            tracer.decision_path = tracer.decision_path.replace("->openai_called_fallback", "->openai_error")
                     else:
-                        # OpenAI falló, marcar como bloqueado por error
-                        tracer.decision_path = tracer.decision_path.replace("->openai_called_fallback", "->openai_error")
-                else:
-                    # Determinar por qué se bloqueó OpenAI
-                    block_reason = "unknown"
-                    if message_type != MessageType.BUSINESS_CONSULT:
-                        block_reason = f"blocked_{message_type.value}"
-                    elif tracer.intent in ["envios", "pagos", "horarios", "direccion", "ubicacion"]:
-                        block_reason = "blocked_faq"
-                    elif tracer.cache_hit:
-                        block_reason = "blocked_cache_hit"
-                    elif context.get("has_robust_deterministic"):
-                        block_reason = "blocked_deterministic"
+                        # Determinar por qué se bloqueó OpenAI
+                        block_reason = "unknown"
+                        if message_type != MessageType.BUSINESS_CONSULT:
+                            block_reason = f"blocked_{message_type.value}"
+                        elif tracer.intent in ["envios", "pagos", "horarios", "direccion", "ubicacion"]:
+                            block_reason = "blocked_faq"
+                        elif tracer.cache_hit:
+                            block_reason = "blocked_cache_hit"
+                        elif context.get("has_robust_deterministic"):
+                            block_reason = "blocked_deterministic"
 
-                    tracer.decision_path = f"{tracer.decision_path}->openai_{block_reason}"
+                        tracer.decision_path = f"{tracer.decision_path}->openai_{block_reason}"
 
-                # Si todavía no hay respuesta, usar fallback básico
-                if not result["text"]:
-                    result["text"] = _generate_fallback_response(text, context, intent_result)
+                    # Si todavía no hay respuesta, usar fallback básico
+                    if not result["text"]:
+                        result["text"] = _generate_fallback_response(text, context, intent_result)
 
             # Paso 7: Ajustar asset si no fue incluido en respuesta final
             if result["asset"] and not asset_selected:
-            # Si seleccionamos asset pero luego no lo incluimos, quitarlo de tracer
-            tracer.selected_asset_id = None
-            result["asset"] = None
+                # Si seleccionamos asset pero luego no lo incluimos, quitarlo de tracer
+                tracer.selected_asset_id = None
+                result["asset"] = None
 
             # Paso 8: Post-procesar para asegurar pregunta de siguiente paso
             original_text = result["text"]
@@ -660,17 +660,17 @@ def build_response(
 
             # Paso 9: Calcular decision_path para trazabilidad
             decision_path = _build_decision_path(
-            is_business, cache_checked, asset_selected, tracer.openai_called, handoff_triggered,
-            question_appended, message_type.value, None
+                is_business, cache_checked, asset_selected, tracer.openai_called, handoff_triggered,
+                question_appended, message_type.value, None
             )
             tracer.decision_path = decision_path
 
             # Paso 10: Calcular response_len_chars
             tracer.response_len_chars = len(result["text"]) if result["text"] else 0
 
-        # Guardar respuesta de Luisa
-        if result["text"]:
-            save_message(conversation_id, result["text"], "luisa")
+            # Guardar respuesta de Luisa
+            if result["text"]:
+                save_message(conversation_id, result["text"], "luisa")
     
     return result
 
