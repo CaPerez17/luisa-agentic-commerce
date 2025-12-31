@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script de prueba para el Sales Dialogue Manager.
-Prueba los 5 escenarios end-to-end.
+Prueba los 5 casos nuevos: saludo humano, comprar máquina, ciudad, visita, agendamiento.
 """
 import requests
 import json
@@ -69,7 +69,7 @@ def send_message(message_text: str, message_id: str = None) -> dict:
         return {"status": 0, "response": str(e), "success": False}
 
 
-def test_scenario_1():
+def test_case_1():
     """Caso 1: 'Hola' => saludo humano sin menú"""
     print("=" * 70)
     print("CASO 1: 'Hola' => saludo humano sin menú")
@@ -95,7 +95,7 @@ def test_scenario_1():
         return False
 
 
-def test_scenario_1b():
+def test_case_2():
     """Caso 2: 'comprar máquina' => pregunta correcta"""
     print("=" * 70)
     print("CASO 2: 'comprar máquina' => pregunta correcta")
@@ -121,7 +121,7 @@ def test_scenario_1b():
         return False
 
 
-def test_scenario_2():
+def test_case_3():
     """Caso 3: 'Montelibano' => city_filled y NO repregunta ciudad"""
     print("=" * 70)
     print("CASO 3: 'Montelibano' => city_filled y NO repregunta ciudad")
@@ -157,7 +157,7 @@ def test_scenario_2():
         return False
 
 
-def test_scenario_3():
+def test_case_4():
     """Caso 4: 'puedo visitar la tienda? donde queda?' => responde dirección/horarios + pregunta hoy/mañana, sin handoff"""
     print("=" * 70)
     print("CASO 4: Visita => dirección/horarios + pregunta hoy/mañana, sin handoff")
@@ -185,7 +185,7 @@ def test_scenario_3():
         return False
 
 
-def test_scenario_4():
+def test_case_5():
     """Caso 5: Usuario responde 'sí' a llamada/cita => pide datos (no dead-end)"""
     print("=" * 70)
     print("CASO 5: 'sí' a llamada/cita => pide datos (no dead-end)")
@@ -222,133 +222,36 @@ def test_scenario_4():
         return False
 
 
-def test_scenario_2():
-    """Escenario 2: Horarios → quiero pasar → ciudad distinta → disambiguación"""
-    print("=" * 70)
-    print("ESCENARIO 2: Horarios → quiero pasar → ciudad distinta → disambiguación")
-    print("=" * 70)
-    print()
-    
-    steps = [
-        ("Horarios", "Usuario pregunta horarios"),
-        ("Quiero pasar", "Usuario quiere visitar"),
-        ("Montelíbano", "Usuario menciona ciudad distinta")
-    ]
-    
-    results = []
-    for msg, desc in steps:
-        print(f"📤 {desc}: '{msg}'")
-        result = send_message(msg)
-        results.append((msg, result))
-        print(f"   Status: {result['status']}")
-        print(f"   Response: {result['response']}")
-        print()
-        time.sleep(2)
-    
-    print("✅ Escenario 2 completado")
-    print()
-    return all(r[1]["success"] for r in results)
-
-
-def test_scenario_3():
-    """Escenario 3: 'tienes fotos?' en medio de calificación"""
-    print("=" * 70)
-    print("ESCENARIO 3: 'tienes fotos?' en medio de calificación")
-    print("=" * 70)
-    print()
-    
-    steps = [
-        ("Industrial", "Usuario indica tipo"),
-        ("Gorras", "Usuario indica uso"),
-        ("Tienes fotos?", "Usuario cambia de tema (fotos)")
-    ]
-    
-    results = []
-    for msg, desc in steps:
-        print(f"📤 {desc}: '{msg}'")
-        result = send_message(msg)
-        results.append((msg, result))
-        print(f"   Status: {result['status']}")
-        print(f"   Response: {result['response']}")
-        print()
-        time.sleep(2)
-    
-    print("✅ Escenario 3 completado")
-    print()
-    return all(r[1]["success"] for r in results)
-
-
-def test_scenario_4():
-    """Escenario 4: 'garantía' y 'repuestos'"""
-    print("=" * 70)
-    print("ESCENARIO 4: 'garantía' y 'repuestos'")
-    print("=" * 70)
-    print()
-    
-    steps = [
-        ("Garantía", "Usuario pregunta garantía"),
-        ("Repuestos", "Usuario pregunta repuestos")
-    ]
-    
-    results = []
-    for msg, desc in steps:
-        print(f"📤 {desc}: '{msg}'")
-        result = send_message(msg)
-        results.append((msg, result))
-        print(f"   Status: {result['status']}")
-        print(f"   Response: {result['response']}")
-        print()
-        time.sleep(2)
-    
-    print("✅ Escenario 4 completado")
-    print()
-    return all(r[1]["success"] for r in results)
-
-
-def test_scenario_5():
-    """Escenario 5: Usuario confuso ('no sé cuál') → recomendación con 2 opciones + CTA"""
-    print("=" * 70)
-    print("ESCENARIO 5: Usuario confuso → recomendación con opciones")
-    print("=" * 70)
-    print()
-    
-    steps = [
-        ("Industrial", "Usuario indica tipo"),
-        ("No sé cuál", "Usuario está confuso")
-    ]
-    
-    results = []
-    for msg, desc in steps:
-        print(f"📤 {desc}: '{msg}'")
-        result = send_message(msg)
-        results.append((msg, result))
-        print(f"   Status: {result['status']}")
-        print(f"   Response: {result['response']}")
-        print()
-        time.sleep(2)
-    
-    print("✅ Escenario 5 completado")
-    print()
-    return all(r[1]["success"] for r in results)
-
-
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         WEBHOOK_URL = sys.argv[1]
         print(f"Usando URL: {WEBHOOK_URL}")
         print()
     
-    print("🧪 EJECUTANDO SUITE DE PRUEBAS - Sales Dialogue Manager")
+    print("🧪 EJECUTANDO SUITE DE PRUEBAS - Sales Dialogue Manager (Versión Humana)")
     print()
     
     results = []
     
-    # Ejecutar todos los escenarios
-    results.append(("Escenario 1", test_scenario_1()))
-    results.append(("Escenario 2", test_scenario_2()))
-    results.append(("Escenario 3", test_scenario_3()))
-    results.append(("Escenario 4", test_scenario_4()))
-    results.append(("Escenario 5", test_scenario_5()))
+    # Ejecutar todos los casos
+    results.append(("Caso 1: Hola => saludo humano", test_case_1()))
+    print()
+    time.sleep(2)
+    
+    results.append(("Caso 2: comprar máquina => pregunta", test_case_2()))
+    print()
+    time.sleep(2)
+    
+    results.append(("Caso 3: Montelibano => NO repregunta ciudad", test_case_3()))
+    print()
+    time.sleep(2)
+    
+    results.append(("Caso 4: Visita => dirección sin handoff", test_case_4()))
+    print()
+    time.sleep(2)
+    
+    results.append(("Caso 5: sí a llamada => pide datos", test_case_5()))
+    print()
     
     # Resumen
     print("=" * 70)
@@ -366,4 +269,3 @@ if __name__ == "__main__":
         print("❌ ALGUNAS PRUEBAS FALLARON")
     
     sys.exit(0 if all_passed else 1)
-
