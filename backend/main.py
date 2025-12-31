@@ -931,10 +931,10 @@ def extract_context_from_history(history: List[dict]) -> dict:
         context["tipo_maquina"] = "familiar"
     # Si no está en reciente, buscar en historial completo
     if not context["tipo_maquina"]:
-    if any(word in full_text for word in ["industrial", "industriales"]):
-        context["tipo_maquina"] = "industrial"
-    elif any(word in full_text for word in ["familiar", "casa", "hogar", "personal"]):
-        context["tipo_maquina"] = "familiar"
+        if any(word in full_text for word in ["industrial", "industriales"]):
+            context["tipo_maquina"] = "industrial"
+        elif any(word in full_text for word in ["familiar", "casa", "hogar", "personal"]):
+            context["tipo_maquina"] = "familiar"
     
     # Detectar uso específico (priorizar mensajes más recientes)
     usos_detectados = []
@@ -1018,7 +1018,7 @@ def extract_context_from_history(history: List[dict]) -> dict:
     for keyword, (marca, modelo) in marcas_modelos.items():
         if keyword in full_text:
             if not context["marca_interes"]:
-            context["marca_interes"] = marca
+                context["marca_interes"] = marca
             if modelo:
                 context["modelo_interes"] = modelo
             producto = f"{marca} {modelo}" if modelo else marca
@@ -2221,25 +2221,25 @@ async def _chat_legacy(message: Message):
                 print(f"Error en análisis de intención en chat: {e}")
                 # Fallback: detección tradicional (solo si no se detectó por contexto)
                 if not pregunta_promocion_por_contexto:
+                    foto_keywords = ["fotos", "foto", "imágenes", "imagenes", "imagen", "muéstrame", "muestrame", "ver", "quiero ver", "tienes fotos", "tiene fotos", "muestra", "fotografía", "fotografia"]
+                    solicita_foto = any(keyword in message.text.lower() for keyword in foto_keywords)
+                    promo_keywords = ["promoción", "promocion", "promociones", "oferta", "descuento", "navidad"]
+                    pregunta_promocion = any(keyword in message.text.lower() for keyword in promo_keywords)
+        else:
+            # Fallback: detección tradicional (solo si no se detectó por contexto)
+            if not pregunta_promocion_por_contexto:
                 foto_keywords = ["fotos", "foto", "imágenes", "imagenes", "imagen", "muéstrame", "muestrame", "ver", "quiero ver", "tienes fotos", "tiene fotos", "muestra", "fotografía", "fotografia"]
                 solicita_foto = any(keyword in message.text.lower() for keyword in foto_keywords)
                 promo_keywords = ["promoción", "promocion", "promociones", "oferta", "descuento", "navidad"]
                 pregunta_promocion = any(keyword in message.text.lower() for keyword in promo_keywords)
-        else:
-            # Fallback: detección tradicional (solo si no se detectó por contexto)
-            if not pregunta_promocion_por_contexto:
-            foto_keywords = ["fotos", "foto", "imágenes", "imagenes", "imagen", "muéstrame", "muestrame", "ver", "quiero ver", "tienes fotos", "tiene fotos", "muestra", "fotografía", "fotografia"]
-            solicita_foto = any(keyword in message.text.lower() for keyword in foto_keywords)
-            promo_keywords = ["promoción", "promocion", "promociones", "oferta", "descuento", "navidad"]
-            pregunta_promocion = any(keyword in message.text.lower() for keyword in promo_keywords)
         
         print(f"DEBUG: pregunta_promocion={pregunta_promocion}, pregunta_promocion_por_contexto={pregunta_promocion_por_contexto}")
         
         # Siempre preparar la ruta de la imagen de promoción
         # Se usará si pregunta_promocion es True
-            promo_path = Path("assets/catalog/promociones/promocion_navidad_2024.png")
-            if not promo_path.exists():
-                promo_path = Path("backend/assets/catalog/promociones/promocion_navidad_2024.png")
+        promo_path = Path("assets/catalog/promociones/promocion_navidad_2024.png")
+        if not promo_path.exists():
+            promo_path = Path("backend/assets/catalog/promociones/promocion_navidad_2024.png")
         promo_image_path = promo_path if promo_path.exists() else None
         
         if pregunta_promocion:
