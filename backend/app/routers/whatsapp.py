@@ -5,11 +5,14 @@ from fastapi import APIRouter, Request, Response, HTTPException, Query, Backgrou
 from typing import Optional
 import json
 import time
+import re
+from datetime import datetime, timedelta, timezone
 
 from app.config import (
     WHATSAPP_ENABLED,
     WHATSAPP_VERIFY_TOKEN,
-    HANDOFF_COOLDOWN_MINUTES
+    HANDOFF_COOLDOWN_MINUTES,
+    HUMAN_TTL_HOURS
 )
 from app.models.database import (
     create_or_update_conversation,
@@ -17,6 +20,7 @@ from app.models.database import (
     get_conversation_history,
     get_conversation_mode,
     set_conversation_mode,
+    get_conversation,
     mark_wa_message_processed,
     is_wa_message_processed,
     get_conversation_state,
@@ -196,6 +200,32 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     return {"status": "ok", "queued": True}
 
 
+def _sanitize_error(error_msg: Optional[str]) -> str:
+    """
+    Sanitiza mensajes de error para no exponer secretos en logs.
+    Filtra access_token, bearer tokens, y limita longitud.
+    """
+    if not error_msg:
+        return "unknown"
+    
+    # Convertir a string si no lo es
+    error_str = str(error_msg)
+    
+    # Filtrar tokens comunes
+    # Filtrar access_token (EAA...)
+    error_str = re.sub(r'EAA[a-zA-Z0-9_-]+', '***ACCESS_TOKEN_REDACTED***', error_str)
+    # Filtrar bearer tokens
+    error_str = re.sub(r'Bearer\s+[a-zA-Z0-9_-]+', 'Bearer ***REDACTED***', error_str, flags=re.IGNORECASE)
+    # Filtrar Authorization headers
+    error_str = re.sub(r'Authorization:\s*[^\s]+', 'Authorization: ***REDACTED***', error_str, flags=re.IGNORECASE)
+    
+    # Limitar longitud
+    if len(error_str) > 200:
+        error_str = error_str[:197] + "..."
+    
+    return error_str
+
+
 def _analyze_webhook_event(body: dict) -> tuple:
     """
     Analiza el webhook para instrumentación forense.
@@ -258,19 +288,95 @@ async def _process_whatsapp_message(
         conversation_id = get_phone_conversation_id(phone_from)
         create_or_update_conversation(conversation_id, phone_from, "whatsapp")
         
-        # Verificar modo de conversación (modo sombra)
+        # Verificar modo de conversación (modo sombra) con TTL
         mode = get_conversation_mode(conversation_id)
+        
+        # Verificar si HUMAN_ACTIVE expiró (TTL)
+        if mode == "HUMAN_ACTIVE":
+            conversation = get_conversation(conversation_id)
+            mode_updated_at = conversation.get("mode_updated_at") if conversation else None
+            
+            if mode_updated_at:
+                try:
+                    # Parsear timestamp (SQLite puede devolver string ISO o datetime)
+                    if isinstance(mode_updated_at, str):
+                        # Intentar parsear ISO format
+                        if "T" in mode_updated_at or " " in mode_updated_at:
+                            # Formato ISO: "2025-01-XX HH:MM:SS" o "2025-01-XXT..."
+                            updated_time = datetime.fromisoformat(mode_updated_at.replace("Z", "+00:00").replace(" ", "T"))
+                            # Si no tiene timezone, asumir UTC
+                            if updated_time.tzinfo is None:
+                                updated_time = updated_time.replace(tzinfo=timezone.utc)
+                        else:
+                            # Formato SQLite timestamp simple
+                            updated_time = datetime.strptime(mode_updated_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    else:
+                        # Ya es datetime
+                        updated_time = mode_updated_at
+                        if updated_time.tzinfo is None:
+                            updated_time = updated_time.replace(tzinfo=timezone.utc)
+                    
+                    # Calcular tiempo transcurrido
+                    now_utc = datetime.now(timezone.utc)
+                    elapsed = now_utc - updated_time
+                    ttl_seconds = HUMAN_TTL_HOURS * 3600
+                    
+                    if elapsed.total_seconds() > ttl_seconds:
+                        # TTL expirado: revertir a AI_ACTIVE
+                        set_conversation_mode(conversation_id, "AI_ACTIVE")
+                        mode = "AI_ACTIVE"
+                        logger.info(
+                            "mode_auto_reverted_to_ai",
+                            conversation_id=conversation_id,
+                            seconds_in_human_active=int(elapsed.total_seconds()),
+                            ttl_hours=HUMAN_TTL_HOURS
+                        )
+                except Exception as e:
+                    # Si hay error parseando timestamp, mantener modo actual y loggear
+                    logger.warning(
+                        "Error verificando TTL de modo",
+                        conversation_id=conversation_id,
+                        mode_updated_at=str(mode_updated_at),
+                        error=str(e)
+                    )
         
         # Guardar mensaje del cliente
         save_message(conversation_id, text, "customer")
         
-        # Si está en modo HUMAN_ACTIVE, solo registrar (no responder)
+        # Si está en modo HUMAN_ACTIVE (y NO expiró), responder cortesía mínima (REGLA DE ORO: nunca quedarse muda)
         if mode == "HUMAN_ACTIVE":
             logger.info(
                 "Mensaje registrado en modo HUMAN_ACTIVE",
                 conversation_id=conversation_id,
                 message_id=message_id[:20] if message_id else "unknown"
             )
+            
+            # REGLA DE ORO MVP: LUISA nunca debe quedarse muda
+            # Enviar respuesta cortés indicando que un asesor revisará
+            response_text = (
+                "Hola 😊 sigo pendiente por aquí. Un asesor te va a contactar, "
+                "pero si quieres adelantarme tu nombre y el barrio donde te encuentras, "
+                "lo dejamos listo."
+            )
+            success, error_info = await send_whatsapp_message(phone_from, response_text)
+            if success:
+                save_message(conversation_id, response_text, "luisa")
+                logger.info(
+                    "reply_sent_in_human_active",
+                    conversation_id=conversation_id,
+                    message_id=message_id[:20] if message_id else "unknown",
+                    phone=phone_from[-4:] if phone_from else "unknown"
+                )
+            else:
+                # Sanitizar error para no exponer secretos
+                sanitized_error = _sanitize_error(error_info) if error_info else "unknown"
+                logger.error(
+                    "reply_failed_in_human_active",
+                    conversation_id=conversation_id,
+                    message_id=message_id[:20] if message_id else "unknown",
+                    phone=phone_from[-4:] if phone_from else "unknown",
+                    error=sanitized_error
+                )
             return
         
         # Procesar mensaje con trazabilidad

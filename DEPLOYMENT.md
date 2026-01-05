@@ -1,358 +1,434 @@
 # 🚀 Deployment Guide - LUISA
 
-## Pre-Deployment Checklist
+Complete guide for deploying LUISA to production using Docker Compose.
 
-### ✅ Security
-- [ ] All secrets removed from codebase (check with `git log --all -p | grep -i "sk-"`)
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Quick Start](#quick-start)
+3. [Production Deployment](#production-deployment)
+4. [Configuration](#configuration)
+5. [Verification & Testing](#verification--testing)
+6. [Troubleshooting](#troubleshooting)
+7. [Maintenance](#maintenance)
+
+---
+
+## Prerequisites
+
+### Infrastructure Requirements
+
+- **Server**: Ubuntu 22.04+ (AWS Lightsail recommended)
+- **Resources**: Minimum 512MB RAM, 1GB recommended
+- **Domain**: Pointing to server IP (e.g., `luisa-agent.online`)
+- **Docker**: Docker 20.10+ and Docker Compose v2+
+- **Ports**: 80 (HTTP), 443 (HTTPS) open in firewall
+
+### Pre-Deployment Checklist
+
+- [ ] All secrets removed from codebase
 - [ ] `.env` file configured with production credentials
-- [ ] `.env` file added to `.gitignore` (verified)
+- [ ] `.env` file in `.gitignore` (verified)
 - [ ] API keys rotated if previously committed
-- [ ] Service account files secured (not in git)
+- [ ] Database backup strategy in place
 
-### ✅ Configuration
-- [ ] `OPENAI_ENABLED=true` (if using OpenAI)
-- [ ] `WHATSAPP_ENABLED=true` (if using WhatsApp)
-- [ ] Production WhatsApp tokens configured
-- [ ] Test phone numbers configured for internal notifications
-- [ ] Database path configured (`DB_PATH=luisa.db`)
+---
 
-### ✅ Database
-- [ ] Run `python scripts/init_db.py` to create tables
-- [ ] Verify catalog items are loaded
-- [ ] Backup strategy in place for SQLite DB
+## Quick Start
 
-### ✅ Assets
-- [ ] Product images present in `backend/assets/catalog/`
-- [ ] `catalog_index.json` is up to date
-- [ ] Google Drive configured (if using Drive for assets)
+### Option 1: Automated Deployment Script (Recommended)
 
-### ✅ Testing
-- [ ] Run `pytest tests/` - all tests passing
-- [ ] Load test with `scripts/test_latency.py`
-- [ ] WhatsApp webhook verified (if enabled)
-- [ ] OpenAI responses tested (if enabled)
+```bash
+# 1. Provision server (first time only)
+sudo ./provision.sh
+
+# 2. Deploy application
+sudo ./deploy.sh
+```
+
+The `deploy.sh` script is **idempotent** and can be run multiple times safely.
+
+### Option 2: Manual Docker Compose
+
+```bash
+# 1. Build images
+docker compose build
+
+# 2. Start services
+docker compose up -d
+
+# 3. Verify health
+curl http://localhost:8000/health
+```
 
 ---
 
 ## Production Deployment
 
-### Option 1: Docker (Recommended)
+### Architecture
 
-```bash
-# Build image
-docker build -t luisa-backend:latest ./backend
-
-# Run container
-docker run -d \
-  --name luisa \
-  -p 8000:8000 \
-  --env-file .env \
-  -v $(pwd)/backend/assets:/app/assets \
-  -v $(pwd)/backend/luisa.db:/app/luisa.db \
-  luisa-backend:latest
+```
+Internet
+   ↓
+Caddy (Port 80/443) → Automatic HTTPS with Let's Encrypt
+   ↓
+Backend (Port 8000, localhost only) → FastAPI + SQLite
 ```
 
-### Option 2: Systemd Service (Linux)
+### Step-by-Step Deployment
 
-Create `/etc/systemd/system/luisa.service`:
-
-```ini
-[Unit]
-Description=LUISA AI Assistant
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/luisa/backend
-Environment="PATH=/opt/luisa/backend/venv/bin"
-EnvironmentFile=/opt/luisa/.env
-ExecStart=/opt/luisa/backend/venv/bin/python main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```bash
-sudo systemctl enable luisa
-sudo systemctl start luisa
-sudo systemctl status luisa
-```
-
-### Option 3: PM2 (Node.js Process Manager)
+#### 1. Server Setup
 
 ```bash
-# Install PM2
-npm install -g pm2
+# Connect to server
+ssh -i ~/.ssh/your-key.pem user@your-server-ip
 
-# Start with PM2
-cd backend
-pm2 start main.py --name luisa --interpreter python3
-
-# Save process list
-pm2 save
-pm2 startup
+# Clone repository
+git clone <repository-url> /opt/luisa
+cd /opt/luisa
 ```
 
----
+#### 2. Configure Environment
 
-## Environment Variables for Production
-
-**Critical:**
 ```bash
-OPENAI_API_KEY=sk-proj-YOUR-REAL-KEY
-WHATSAPP_ACCESS_TOKEN=YOUR-WHATSAPP-TOKEN
-WHATSAPP_PHONE_NUMBER_ID=YOUR-PHONE-ID
-WHATSAPP_VERIFY_TOKEN=YOUR-WEBHOOK-SECRET
+# Copy example env file
+cp .env.example .env
+
+# Edit with production values
+nano .env
 ```
 
-**Recommended:**
+**Required variables:**
 ```bash
-OPENAI_ENABLED=true
+# WhatsApp Configuration
 WHATSAPP_ENABLED=true
-CACHE_ENABLED=true
+WHATSAPP_ACCESS_TOKEN=EAA...          # From Meta Business Dashboard
+WHATSAPP_PHONE_NUMBER_ID=...          # From Meta Business Dashboard
+WHATSAPP_VERIFY_TOKEN=secure-token    # Must match Meta dashboard
+TEST_NOTIFY_NUMBER=+57XXXXXXXXXX      # Internal notifications
+
+# OpenAI (optional)
+OPENAI_ENABLED=true
+OPENAI_API_KEY=sk-...
+
+# Production Settings
+PRODUCTION_MODE=true
+LOG_FORMAT=json
 LOG_LEVEL=INFO
-DEBUG=false
+
+# Shadow Mode TTL
+HUMAN_TTL_HOURS=12                    # Hours before reverting HUMAN_ACTIVE
+HANDOFF_COOLDOWN_MINUTES=30           # Cooldown after handoff
 ```
 
----
+#### 3. Deploy with Docker Compose
 
-## Monitoring & Observability
-
-### Health Check
 ```bash
+# Build and start services
+docker compose up -d
+
+# Verify containers are running
+docker compose ps
+
+# Check logs
+docker compose logs -f backend
+```
+
+#### 4. Verify Deployment
+
+```bash
+# Health check local
 curl http://localhost:8000/health
-```
 
-Expected response:
-```json
-{
-  "status": "healthy",
-  "service": "luisa",
-  "version": "2.0.0",
-  "modules": {
-    "openai": true,
-    "whatsapp": true,
-    "cache": true
-  }
-}
-```
+# Health check public (may take 1-2 min for SSL)
+curl https://luisa-agent.online/health
 
-### Logs
-```bash
-# Follow logs (systemd)
-sudo journalctl -u luisa -f
-
-# Follow logs (PM2)
-pm2 logs luisa
-
-# Follow logs (Docker)
-docker logs -f luisa
-```
-
-### Analytics
-```bash
-cd backend
-python scripts/analyze_traces.py
-```
-
-This generates `trace_analysis_report.md` with:
-- Cost audit (OpenAI usage)
-- Conversation quality metrics
-- Routing analysis
-- Cache performance
-
----
-
-## Backup Strategy
-
-### Database Backup (Automated)
-```bash
-# Add to crontab (daily backup)
-0 2 * * * /usr/bin/sqlite3 /opt/luisa/backend/luisa.db ".backup '/opt/luisa/backups/luisa-$(date +\%Y\%m\%d).db'"
-```
-
-### Asset Backup
-```bash
-# Sync assets to backup location
-rsync -av /opt/luisa/backend/assets/ /backup/luisa-assets/
+# Verify HTTPS certificate
+echo | openssl s_client -connect luisa-agent.online:443 -servername luisa-agent.online 2>/dev/null | openssl x509 -noout -dates
 ```
 
 ---
 
-## Scaling Considerations
+## Configuration
 
-### Horizontal Scaling
-- Use PostgreSQL instead of SQLite for multi-instance deployments
-- Add Redis for distributed cache
-- Use load balancer (Nginx, HAProxy) for multiple instances
+### WhatsApp Webhook Setup
 
-### Vertical Scaling
-- Monitor memory usage (cache size affects RAM)
-- Adjust OpenAI rate limits if needed
-- Optimize asset serving (CDN for images)
+1. **Meta Business Dashboard:**
+   - Go to WhatsApp > Configuration
+   - Set **Callback URL**: `https://luisa-agent.online/whatsapp/webhook`
+   - Set **Verify Token**: Must match `WHATSAPP_VERIFY_TOKEN` in `.env`
+   - Click "Verify and Save"
+
+2. **Verify Webhook:**
+   ```bash
+   curl -v "https://luisa-agent.online/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=TEST123"
+   ```
+   **Expected:** Status 200, Body `TEST123`
+
+3. **Subscribe to Events:**
+   - In Meta Dashboard: WhatsApp > Webhooks > Edit Subscription
+   - Enable: `messages` (required)
+   - Optional: `message_deliveries`, `message_reads`
+
+### Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `WHATSAPP_ENABLED` | Yes | `false` | Enable WhatsApp integration |
+| `WHATSAPP_ACCESS_TOKEN` | Yes* | - | Meta Graph API access token |
+| `WHATSAPP_PHONE_NUMBER_ID` | Yes* | - | WhatsApp Business phone number ID |
+| `WHATSAPP_VERIFY_TOKEN` | Yes* | - | Webhook verification token |
+| `OPENAI_ENABLED` | No | `false` | Enable OpenAI integration |
+| `OPENAI_API_KEY` | No* | - | OpenAI API key |
+| `PRODUCTION_MODE` | Yes | `false` | Enable production settings |
+| `HUMAN_TTL_HOURS` | No | `12` | Hours before reverting HUMAN_ACTIVE mode |
+| `DB_PATH` | No | `luisa.db` | SQLite database path |
+
+*Required if corresponding feature is enabled
 
 ---
 
-## Security Hardening
+## Verification & Testing
 
-### API Security
-- [ ] Add rate limiting (e.g., `slowapi`)
-- [ ] Implement API key authentication for `/api/chat`
-- [ ] Use HTTPS in production (Let's Encrypt, Cloudflare)
-- [ ] Whitelist webhook IPs (WhatsApp, internal services)
+### GO/NO-GO Checklist
 
-### Database Security
-- [ ] Restrict file permissions (`chmod 600 luisa.db`)
-- [ ] Encrypt sensitive data (customer phone numbers)
-- [ ] Regular backups with encryption
+Before going live, verify all critical flows:
 
-### Network Security
-- [ ] Firewall rules (only expose 8000, 443)
-- [ ] VPN for admin access
-- [ ] Separate production/staging environments
+#### 1. Infrastructure
+
+- [ ] Docker containers running (`docker compose ps`)
+- [ ] Health check local OK (`curl http://localhost:8000/health`)
+- [ ] Health check public OK (`curl https://luisa-agent.online/health`)
+- [ ] HTTPS certificate valid (not expired)
+- [ ] Environment variables configured correctly
+
+#### 2. WhatsApp Integration
+
+- [ ] Webhook GET verification works
+- [ ] Webhook POST receives messages
+- [ ] Messages trigger logs in backend
+- [ ] No 4xx/5xx errors when responding
+- [ ] Rate limiting works (20 req/min)
+
+#### 3. Critical Business Flows
+
+- [ ] **Flow 1**: New user → Greeting → LUISA responds
+- [ ] **Flow 2**: LUISA proposes advisor → User says "yes" → Handoff triggered
+- [ ] **Flow 3**: User writes "Hello" after handoff → LUISA responds (FIX P0: no silence)
+- [ ] **Flow 4**: Wait TTL → User writes → LUISA reverts to AI_ACTIVE (FIX P1: TTL works)
+
+#### 4. Logs Verification
+
+- [ ] `reply_sent_in_human_active` present when responding in HUMAN_ACTIVE mode
+- [ ] `mode_auto_reverted_to_ai` present when TTL expires
+- [ ] No critical errors in logs (`docker compose logs backend | grep -i error`)
+
+#### 5. Performance
+
+- [ ] Response time < 2s average
+- [ ] Rate limiting prevents abuse
+
+**GO Criteria:** All checks pass, no silent failures, no critical errors.
+
+### Testing Commands
+
+```bash
+# Verify containers
+docker compose ps
+
+# Check environment variables
+docker exec luisa-backend python -c "from app.config import WHATSAPP_ENABLED, HUMAN_TTL_HOURS; print(f'WHATSAPP: {WHATSAPP_ENABLED}, TTL: {HUMAN_TTL_HOURS}')"
+
+# Monitor logs
+docker compose logs -f backend
+
+# Check database
+docker exec luisa-backend sqlite3 /app/data/luisa.db "SELECT COUNT(*) FROM messages WHERE timestamp > datetime('now', '-1 hour');"
+
+# Test webhook verification
+curl -v "https://luisa-agent.online/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=TEST123"
+```
 
 ---
 
 ## Troubleshooting
 
-### Backend Won't Start
+### Common Issues
+
+#### Backend Not Responding
+
 ```bash
-# Check Python dependencies
-pip install -r requirements.txt
-
-# Initialize database
-python scripts/init_db.py
-
 # Check logs
-tail -f /var/log/luisa/error.log
+docker compose logs backend
+
+# Restart backend
+docker compose restart backend
+
+# Verify health check
+curl http://localhost:8000/health
 ```
 
-### WhatsApp Not Receiving Messages
-- Verify webhook URL is accessible (use ngrok for testing)
-- Check `WHATSAPP_VERIFY_TOKEN` matches Meta config
-- Verify `WHATSAPP_ACCESS_TOKEN` is valid (not expired)
+#### Caddy SSL Certificate Issues
 
-### OpenAI Errors
-- Verify API key is valid: `echo $OPENAI_API_KEY`
-- Check quota: https://platform.openai.com/usage
-- Review guardrails: `python -c "from app.rules.business_guardrails import classify_message_type; print(classify_message_type('test'))"`
-
-### High Latency
-- Run latency test: `python scripts/test_latency.py`
-- Check cache hit rate: `curl http://localhost:8000/api/cache/stats`
-- Monitor OpenAI timeouts in traces
-
----
-
-## Rollback Plan
-
-### Quick Rollback
 ```bash
-# Stop service
-sudo systemctl stop luisa
+# Check Caddy logs
+docker compose logs caddy
 
-# Restore previous version
-git checkout <previous-tag>
-pip install -r requirements.txt
+# Verify domain DNS
+dig luisa-agent.online
 
-# Restore database
-cp /opt/luisa/backups/luisa-YYYYMMDD.db /opt/luisa/backend/luisa.db
+# Force certificate renewal (if needed)
+docker compose restart caddy
+```
 
-# Restart
-sudo systemctl start luisa
+#### WhatsApp Webhook Not Receiving Messages
+
+1. **Verify webhook URL in Meta Dashboard:**
+   - Must be exactly: `https://luisa-agent.online/whatsapp/webhook`
+   - No trailing slash
+
+2. **Check verify token:**
+   ```bash
+   docker exec luisa-backend python -c "from app.config import WHATSAPP_VERIFY_TOKEN; print(WHATSAPP_VERIFY_TOKEN[:10])"
+   ```
+   Must match Meta Dashboard exactly (case-sensitive)
+
+3. **Check webhook subscription:**
+   - In Meta Dashboard: WhatsApp > Webhooks > Edit Subscription
+   - Ensure `messages` is enabled
+
+4. **Test webhook manually:**
+   ```bash
+   curl -v "https://luisa-agent.online/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=TEST123"
+   ```
+
+#### Out of Memory (OOM) Errors
+
+If deploying on small VPS (512MB):
+
+```bash
+# Free up memory
+docker system prune -af
+
+# Check memory usage
+free -h
+docker stats --no-stream
+
+# Consider upgrading VPS or adding swap
+```
+
+#### Database Issues
+
+```bash
+# Initialize database
+docker compose exec backend python scripts/init_db.py
+
+# Check database permissions
+ls -la /opt/luisa/data/luisa.db
+
+# Backup database
+docker compose exec backend sqlite3 /app/data/luisa.db ".backup /app/data/luisa-backup.db"
 ```
 
 ---
 
-## Contact & Support
+## Maintenance
 
-**Internal Team:**
-- Engineering: [Your Email]
-- Business Owner: Luisa @ El Sastre
+### Regular Tasks
 
-**External Services:**
-- OpenAI Support: https://help.openai.com/
-- WhatsApp Business API: https://business.facebook.com/
+#### View Logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Backend only
+docker compose logs -f backend
+
+# Last 100 lines
+docker compose logs --tail=100 backend
+```
+
+#### Restart Services
+
+```bash
+# All services
+docker compose restart
+
+# Backend only
+docker compose restart backend
+
+# Caddy only
+docker compose restart caddy
+```
+
+#### Update Application
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild and restart
+docker compose build --no-cache
+docker compose up -d
+
+# Verify health
+curl http://localhost:8000/health
+```
+
+#### Database Backup
+
+```bash
+# Create backup
+docker compose exec backend sqlite3 /app/data/luisa.db ".backup /app/data/luisa-$(date +%Y%m%d).db"
+
+# Copy backup from container
+docker cp luisa-backend:/app/data/luisa-$(date +%Y%m%d).db ./backups/
+```
+
+### Monitoring
+
+#### Health Checks
+
+- **Local**: `http://localhost:8000/health`
+- **Public**: `https://luisa-agent.online/health`
+- **Expected Response:**
+  ```json
+  {
+    "status": "healthy",
+    "service": "luisa",
+    "version": "2.0.0",
+    "whatsapp_enabled": true
+  }
+  ```
+
+#### Resource Usage
+
+```bash
+# Container stats
+docker stats --no-stream
+
+# Disk usage
+df -h
+docker system df
+```
+
+### Security
+
+- **Firewall**: Only ports 22, 80, 443 open
+- **Secrets**: All in `.env` (not committed)
+- **Logs**: Masked PII (phone numbers show last 4 digits only)
+- **Rate Limiting**: 20 req/min per phone number (WhatsApp), 30 req/min per conversation (API)
 
 ---
 
-## ✅ Repo Ready Checklist
+## Additional Resources
 
-### 📦 Version Control
-- [x] `.gitignore` configurado con todas las exclusiones necesarias
-- [x] `venv/`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/` ignorados
-- [x] `*.log`, `backend/assets/cache/` ignorados
-- [x] `backend/*.db`, `backend/data/` ignorados (DB no versionada)
-- [x] `.env`, `*.secret`, `*.key`, `*.pem` ignorados
-- [x] Archivos de credentials (JSON, PEM) ignorados
-- [x] `outbox/*.json` ignorado (mantener solo `.gitkeep`)
-- [x] Repo auditado en busca de secretos (`OPENAI_API_KEY`, `WHATSAPP_ACCESS_TOKEN`, llaves privadas)
-- [x] Secretos eliminados de archivos tracked (verificado con `git log`)
-
-### 🔐 Configuración & Secrets
-- [x] `.env.example` creado con todas las variables necesarias (sin valores secretos)
-- [x] `.env` NO está en git (confirmado en `.gitignore`)
-- [x] README actualizado con instrucciones de configuración (`cp .env.example .env`)
-- [x] Variables de entorno documentadas en `.env.example`
-- [x] API keys rotadas (si fueron comprometidas previamente)
-
-### 🗄️ Base de Datos
-- [x] Script `backend/scripts/init_db.py` creado para inicialización reproducible
-- [x] DB de producción movida a `backend/data/` (no versionada)
-- [x] `backend/data/.gitkeep` agregado para mantener directorio en git
-- [x] Instrucciones de inicialización en README (`python scripts/init_db.py`)
-- [x] Schema versionado en código (tablas se crean programáticamente)
-
-### 📁 Assets & Archivos
-- [x] `outbox/.gitkeep` agregado para mantener directorio en git
-- [x] Assets de catálogo conservados en `backend/assets/catalog/`
-- [x] `catalog_index.json` versionado (metadata necesaria)
-- [x] Cache runtime (`backend/assets/cache/`) NO versionado
-- [x] Archivos grandes evaluados (catálogo mínimo vs full decidido: mantener catálogo completo)
-
-### 📄 Documentación
-- [x] README actualizado con setup de `.env`
-- [x] DEPLOYMENT.md creado con guía de producción
-- [x] SECURITY.md creado con política de seguridad
-- [x] `.env.example` documentado con comentarios
-- [x] Instrucciones de instalación verificadas (manual + automática con `start.sh`)
-
-### 🧪 Testing & Calidad
-- [x] Tests existentes pasan (`pytest tests/`)
-- [x] Script de análisis de trazas funcional (`analyze_traces.py`)
-- [x] Linter configurado (opcional: ruff, black)
-- [x] Type hints en código crítico (coverage parcial, mejora continua)
-
-### 🚀 Listo para Producción
-- [x] Backend se puede inicializar desde cero (sin DB previa)
-- [x] Frontend funciona con `file://` (no requiere servidor)
-- [x] Servidor de desarrollo arranca correctamente (`start.sh`)
-- [x] Health endpoint funcional (`/health`)
-- [x] Feature flags documentados (OPENAI_ENABLED, WHATSAPP_ENABLED, CACHE_ENABLED)
-- [x] Logs estructurados (JSON logs disponibles)
-
-### 🔒 Seguridad
-- [x] Secrets auditados en git history (`git log --all -p | grep -i "sk-"`)
-- [x] No hay API keys hardcodeadas en código
-- [x] SECURITY.md con política de reporte de vulnerabilidades
-- [x] Dependencias sin vulnerabilidades conocidas (ejecutar `pip install safety && safety check`)
-- [x] Rate limiting documentado (implementación recomendada pre-producción)
-
-### 🎯 Commit Público
-- [x] Repo limpio y sin archivos innecesarios
-- [x] Sin datos de clientes o conversaciones reales
-- [x] Sin credenciales expuestas
-- [x] Documentación completa para desarrolladores externos
-- [x] Licencia definida (si aplica: MIT, Apache 2.0, etc.)
-- [x] CONTRIBUTING.md opcional (si se espera colaboración externa)
+- **Architecture**: See `ARCHITECTURE.md` for system design details
+- **Troubleshooting**: See `TROUBLESHOOTING.md` for detailed diagnostics
+- **Security**: See `SECURITY.md` for security best practices
+- **Changelog**: See `CHANGELOG.md` for version history
 
 ---
 
-**Checklist Completed**: 2025-12-27  
-**Production Status**: ✅ Ready for deployment  
-**Security Audit**: ✅ Passed  
-**Documentation**: ✅ Complete
+**Last Updated**: 2025-01-XX
