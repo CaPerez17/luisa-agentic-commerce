@@ -67,13 +67,15 @@ INSTRUCCIONES:
 3. Si el mensaje es ambiguo o mezcla intents, elige el más probable
 4. Retorna JSON estricto con el schema definido"""
 
+    history_section = ""
+    if history_context:
+        history_section = f"Historial reciente:\n{history_context}\n"
+    
     user_prompt = f"""Clasifica este mensaje:
 
 "{text}"
 
-{('Historial reciente:\n' + history_context) if history_context else ''}
-
-Retorna JSON con:
+{history_section}Retorna JSON con:
 {{
   "intent": "intent_name",
   "confidence": 0.0-1.0,
