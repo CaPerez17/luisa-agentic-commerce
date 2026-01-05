@@ -82,14 +82,16 @@ REGLAS ESTRICTAS:
 
 OBJETIVO: Generar un plan de venta que cierre (visita/envío/reservar) de forma natural."""
 
+    history_section = ""
+    if history_context:
+        history_section = f"Historial reciente:\n{history_context}\n"
+    
     user_prompt = f"""Mensaje del usuario: "{text}"
 Intent detectado: {intent}
 Stage actual: {stage}
 Slots actuales: {json.dumps(slots, ensure_ascii=False)}
 
-{('Historial reciente:\n' + history_context) if history_context else ''}
-
-Genera un plan de venta en JSON con este schema:
+{history_section}Genera un plan de venta en JSON con este schema:
 {{
   "intent": "intent_name",
   "confidence": 0.0-1.0,
