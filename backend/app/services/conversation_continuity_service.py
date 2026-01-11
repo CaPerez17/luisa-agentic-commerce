@@ -74,28 +74,24 @@ def analyze_conversation_continuity(
     time_since_last_minutes = time_since_last.total_seconds() / 60
     metadata["time_since_last_minutes"] = round(time_since_last_minutes, 1)
     
+    # USAR LLM SIEMPRE para análisis de continuidad (si está habilitado)
+    if OPENAI_ENABLED:
+        return _analyze_continuity_with_llm(text, history, state, conversation_id, metadata)
+    
+    # Fallback a heurísticas solo si LLM está deshabilitado
     # Si ha pasado mucho tiempo (>30 min), es nueva conversación
     if time_since_last_minutes > CONVERSATION_TIMEOUT_MINUTES:
-        return ContinuityDecision.NEW_CONVERSATION, f"timeout_{time_since_last_minutes:.0f}min", metadata
+        return ContinuityDecision.NEW_CONVERSATION, f"timeout_no_llm_{time_since_last_minutes:.0f}min", metadata
     
     # Si ha pasado poco tiempo (<5 min), continuar conversación
     if time_since_last_minutes < 5:
-        return ContinuityDecision.CONTINUE_CONVERSATION, f"recent_{time_since_last_minutes:.0f}min", metadata
-    
-    # Si no hay estado activo, es nueva conversación
-    if not state.get("last_intent") and not state.get("stage") or state.get("stage") == "discovery":
-        if time_since_last_minutes > 15:
-            return ContinuityDecision.NEW_CONVERSATION, "no_active_state", metadata
-    
-    # Zona gris: usar LLM para análisis
-    if time_since_last_minutes >= LLM_CONTINUITY_THRESHOLD_MINUTES and OPENAI_ENABLED:
-        return _analyze_continuity_with_llm(text, history, state, conversation_id, metadata)
+        return ContinuityDecision.CONTINUE_CONVERSATION, f"recent_no_llm_{time_since_last_minutes:.0f}min", metadata
     
     # Por defecto, continuar si hay estado activo, nueva si no
     if state.get("last_intent") or state.get("stage") not in ["discovery", "triage"]:
-        return ContinuityDecision.CONTINUE_CONVERSATION, "has_active_state", metadata
+        return ContinuityDecision.CONTINUE_CONVERSATION, "no_llm_has_active_state", metadata
     else:
-        return ContinuityDecision.NEW_CONVERSATION, "no_active_state_default", metadata
+        return ContinuityDecision.NEW_CONVERSATION, "no_llm_no_active_state", metadata
 
 
 def _get_last_message_time(history: List[Dict[str, Any]]) -> Optional[datetime]:
