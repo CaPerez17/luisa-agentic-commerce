@@ -10,13 +10,15 @@ import os
 
 # Importar después de configurar env
 @pytest.fixture
-def app_with_whatsapp_enabled(monkeypatch):
+def app_with_whatsapp_enabled(monkeypatch, tmp_path):
     """Crea app FastAPI con WhatsApp habilitado para tests."""
+    # Usar archivo temporal en lugar de :memory: para que las conexiones compartan la DB
+    db_path = tmp_path / "test_whatsapp_verify.db"
     monkeypatch.setenv("WHATSAPP_ENABLED", "true")
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "TEST_VERIFY_TOKEN_123")
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test_access_token")
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "test_phone_id")
-    monkeypatch.setenv("DB_PATH", ":memory:")  # DB en memoria para tests
+    monkeypatch.setenv("DB_PATH", str(db_path))
     
     # Reiniciar config para cargar nuevos env vars
     import importlib
@@ -28,10 +30,11 @@ def app_with_whatsapp_enabled(monkeypatch):
 
 
 @pytest.fixture
-def app_with_whatsapp_disabled(monkeypatch):
+def app_with_whatsapp_disabled(monkeypatch, tmp_path):
     """Crea app FastAPI con WhatsApp deshabilitado para tests."""
+    db_path = tmp_path / "test_whatsapp_disabled.db"
     monkeypatch.setenv("WHATSAPP_ENABLED", "false")
-    monkeypatch.setenv("DB_PATH", ":memory:")
+    monkeypatch.setenv("DB_PATH", str(db_path))
     
     import importlib
     from app import config
@@ -143,10 +146,10 @@ def test_webhook_verification_fails_missing_challenge(app_with_whatsapp_enabled)
 
 def test_webhook_verification_disabled(app_with_whatsapp_disabled):
     """
-    Prueba 5: GET verificación cuando WhatsApp está deshabilitado devuelve 503.
+    Prueba 5: GET verificación cuando WhatsApp está deshabilitado devuelve 404.
     
     Request: GET /whatsapp/webhook?hub.mode=subscribe&hub.verify_token=TEST&hub.challenge=CHALLENGE
-    Expected: Status 503, detail "WhatsApp no habilitado"
+    Expected: Status 404 (router no montado cuando WhatsApp está deshabilitado)
     """
     client = TestClient(app_with_whatsapp_disabled)
     
@@ -159,8 +162,8 @@ def test_webhook_verification_disabled(app_with_whatsapp_disabled):
         }
     )
     
-    assert response.status_code == 503
-    assert "WhatsApp no habilitado" in response.json()["detail"]
+    # Cuando WhatsApp está deshabilitado, el router no se monta, así que el endpoint no existe
+    assert response.status_code == 404
 
 
 def test_webhook_verification_case_sensitive_token(app_with_whatsapp_enabled):

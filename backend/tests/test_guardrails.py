@@ -44,7 +44,7 @@ class TestIsBusinessRelated:
         """Preguntas de programación NO son del negocio."""
         result, reason = is_business_related("¿cómo hago un código en python para ordenar una lista?")
         assert result is False
-        assert "programming" in reason.lower() or "fuera" in reason.lower()
+        assert reason == "non_business"
     
     def test_pregunta_javascript(self):
         """Preguntas de JavaScript NO son del negocio."""
@@ -57,10 +57,10 @@ class TestIsBusinessRelated:
         assert result is False
     
     def test_confirmacion_corta(self):
-        """Confirmaciones cortas son del negocio."""
+        """Confirmaciones cortas son del negocio (clasificadas como empty_or_gibberish)."""
         result, reason = is_business_related("sí")
-        assert result is True
-        assert "confirmacion" in reason.lower() or "corto" in reason.lower()
+        assert result is True  # empty_or_gibberish se considera del negocio pero se trata diferente
+        assert reason == "empty_or_gibberish"
     
     def test_pregunta_mixta_favorece_negocio(self):
         """Si menciona máquina aunque tenga otras palabras, es del negocio."""

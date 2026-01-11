@@ -9,13 +9,15 @@ import json
 
 
 @pytest.fixture
-def app_with_whatsapp_enabled(monkeypatch):
+def app_with_whatsapp_enabled(monkeypatch, tmp_path):
     """Crea app FastAPI con WhatsApp habilitado para tests."""
+    # Usar archivo temporal en lugar de :memory: para que las conexiones compartan la DB
+    db_path = tmp_path / "test_whatsapp.db"
     monkeypatch.setenv("WHATSAPP_ENABLED", "true")
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "TEST_VERIFY_TOKEN_123")
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test_access_token")
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "test_phone_id")
-    monkeypatch.setenv("DB_PATH", ":memory:")
+    monkeypatch.setenv("DB_PATH", str(db_path))
     monkeypatch.setenv("OPENAI_ENABLED", "false")  # Deshabilitar OpenAI para tests más rápidos
     monkeypatch.setenv("SALESBRAIN_ENABLED", "false")
     
