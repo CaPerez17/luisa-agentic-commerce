@@ -636,6 +636,9 @@ def check_outbox_dedup(phone_to: str, text: str, ttl_seconds: int = 120) -> bool
     """
     Verifica si ya enviamos un mensaje similar recientemente (anti-spam).
     
+    FIX: Ahora usa hash del texto completo en lugar de las primeras 50 chars,
+    para evitar bloqueos falsos cuando el texto es similar pero no idéntico.
+    
     Args:
         phone_to: Número de destino
         text: Texto del mensaje
@@ -647,15 +650,19 @@ def check_outbox_dedup(phone_to: str, text: str, ttl_seconds: int = 120) -> bool
     if not phone_to or not text:
         return False
     
-    # Normalizar texto (lowercase, sin espacios extra)
-    normalized_text = " ".join(text.lower().strip().split()[:10])  # Primeras 10 palabras
+    # Normalizar texto (lowercase, sin espacios extra, sin saltos de línea)
+    normalized_text = " ".join(text.lower().strip().split())
     
-    # Crear dedup_key: phone:normalized_text:minute_bucket
+    # Crear hash del texto completo para mejor detección de duplicados exactos
+    import hashlib
+    text_hash = hashlib.md5(normalized_text.encode('utf-8')).hexdigest()[:16]
+    
+    # Crear dedup_key: phone:text_hash:minute_bucket
     from datetime import datetime
     now = datetime.utcnow()
     minute_bucket = now.strftime("%Y%m%d%H%M")  # Ventana de 1 minuto
     
-    dedup_key = f"{phone_to}:{normalized_text[:50]}:{minute_bucket}"
+    dedup_key = f"{phone_to}:{text_hash}:{minute_bucket}"
     
     with get_db() as conn:
         cursor = conn.cursor()

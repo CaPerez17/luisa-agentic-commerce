@@ -424,6 +424,60 @@ async def _process_whatsapp_message(
             state["conversation_id"] = conversation_id
             state["phone_from"] = phone_from
             
+            # ANALIZAR CONTINUIDAD CONVERSACIONAL: Si es saludo, verificar si es nueva conversación
+            from app.services.conversation_continuity_service import (
+                analyze_conversation_continuity,
+                ContinuityDecision,
+                generate_clarification_message
+            )
+            from app.models.database import reset_conversation_state
+            
+            continuity_decision = None
+            if intent == "saludo":
+                continuity_decision, continuity_reason, continuity_metadata = analyze_conversation_continuity(
+                    text=text,
+                    intent=intent,
+                    history=history,
+                    state=state,
+                    conversation_id=conversation_id
+                )
+                
+                logger.info(
+                    "continuity_analysis",
+                    conversation_id=conversation_id,
+                    decision=continuity_decision,
+                    reason=continuity_reason,
+                    time_since_last_minutes=continuity_metadata.get("time_since_last_minutes"),
+                    llm_used=continuity_metadata.get("llm_used", False),
+                    intent=intent
+                )
+                
+                # Si es nueva conversación, resetear estado
+                if continuity_decision == ContinuityDecision.NEW_CONVERSATION:
+                    logger.info(
+                        "resetting_conversation_state",
+                        conversation_id=conversation_id,
+                        reason=continuity_reason,
+                        old_stage=state.get("stage"),
+                        old_last_intent=state.get("last_intent")
+                    )
+                    reset_conversation_state(phone_from)
+                    state = get_conversation_state(phone_from)
+                    state["conversation_id"] = conversation_id
+                    state["phone_from"] = phone_from
+                # Si necesita aclaración, enviar mensaje y retornar
+                elif continuity_decision == ContinuityDecision.ASK_CLARIFICATION:
+                    clarification_text = generate_clarification_message(conversation_id)
+                    success, _ = await send_whatsapp_message(phone_from, clarification_text)
+                    if success:
+                        save_message(conversation_id, clarification_text, "luisa")
+                        logger.info(
+                            "clarification_sent",
+                            conversation_id=conversation_id,
+                            phone=phone_from[-4:] if phone_from else "unknown"
+                        )
+                    return
+            
             # Verificar si requiere handoff
             from app.services.handoff_service import should_handoff as check_handoff
             decision = check_handoff(text, context)
