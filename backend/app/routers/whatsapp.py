@@ -499,6 +499,70 @@ async def _process_whatsapp_message(
                         )
                     return
             
+            # Si estamos recopilando datos del lead, procesar respuesta del usuario
+            if state.get("collecting_lead_data"):
+                # Extraer nombre y barrio/ciudad del texto del usuario
+                # Formato esperado: "nombre, barrio" o "nombre barrio" o solo "nombre"
+                import re
+                text_parts = text.split(",")
+                if len(text_parts) >= 2:
+                    # Formato: "nombre, barrio" o "nombre, ciudad"
+                    extracted_name = text_parts[0].strip()
+                    extracted_location = text_parts[1].strip()
+                else:
+                    # Formato: "nombre barrio" o solo "nombre"
+                    words = text.split()
+                    if len(words) >= 2:
+                        # Asumir que el último elemento es barrio/ciudad
+                        extracted_name = " ".join(words[:-1]).strip()
+                        extracted_location = words[-1].strip()
+                    else:
+                        # Solo nombre
+                        extracted_name = text.strip()
+                        extracted_location = None
+                
+                # Guardar datos extraídos en el contexto y estado
+                if extracted_name:
+                    context["cliente_nombre"] = extracted_name
+                    state["cliente_nombre"] = extracted_name
+                
+                if extracted_location:
+                    # Intentar detectar si es ciudad o barrio
+                    from app.services.context_service import extract_context_from_history
+                    # Actualizar contexto con la ubicación
+                    context["ciudad"] = extracted_location
+                    state["cliente_barrio"] = extracted_location
+                
+                # Actualizar contact_name si tenemos nombre
+                if extracted_name and not contact_name:
+                    contact_name = extracted_name
+                
+                # Guardar estado actualizado
+                save_conversation_state(phone_from, state)
+                
+                # Limpiar flag de recolección
+                state["collecting_lead_data"] = False
+                pending_handoff = state.pop("pending_handoff", None)
+                
+                # Si tenemos datos suficientes, proceder con handoff
+                if extracted_name:
+                    # Continuar con el flujo de handoff (se evaluará de nuevo abajo)
+                    logger.info(
+                        "lead_data_collected",
+                        conversation_id=conversation_id,
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        name=extracted_name,
+                        location=extracted_location
+                    )
+                else:
+                    # Si no se pudo extraer nombre, pedir de nuevo
+                    response_text = "Por favor, comparte tu nombre para poder ayudarte mejor."
+                    tracer.response_text = response_text
+                    success, _ = await send_whatsapp_message(phone_from, response_text)
+                    if success:
+                        save_message(conversation_id, response_text, "luisa")
+                    return
+            
             # Verificar si requiere handoff
             from app.services.handoff_service import should_handoff as check_handoff
             decision = check_handoff(text, context)
@@ -506,6 +570,34 @@ async def _process_whatsapp_message(
             if decision.should_handoff:
                 tracer.routed_team = decision.team.value if decision.team else None
                 
+                # Verificar si ya tenemos datos del lead (nombre, barrio)
+                needs_lead_data = not contact_name or not context.get("ciudad") or not context.get("barrio")
+                
+                if needs_lead_data and not state.get("collecting_lead_data"):
+                    # Primera vez: pedir datos del lead ANTES de hacer handoff
+                    state["collecting_lead_data"] = True
+                    state["pending_handoff"] = {
+                        "reason": decision.reason,
+                        "priority": decision.priority.value,
+                        "team": decision.team.value if decision.team else None
+                    }
+                    save_conversation_state(phone_from, state)
+                    
+                    # Mensaje para recopilar datos
+                    response_text = "Para conectarte con nuestro equipo, necesito algunos datos:\n\n¿Cómo te llamas y en qué barrio o ciudad estás?"
+                    
+                    tracer.response_text = response_text
+                    success, _ = await send_whatsapp_message(phone_from, response_text)
+                    if success:
+                        save_message(conversation_id, response_text, "luisa")
+                        logger.info(
+                            "lead_data_collection_initiated",
+                            conversation_id=conversation_id,
+                            phone=phone_from[-4:] if phone_from else "unknown"
+                        )
+                    return
+                
+                # Si ya tenemos datos o ya pasamos por recolección, hacer handoff
                 # Generar respuesta de handoff para el cliente
                 response_text = generate_handoff_message(
                     text, 
@@ -525,17 +617,32 @@ async def _process_whatsapp_message(
                     history=history
                 )
                 
-                # Enviar notificación interna
+                # Enviar notificación interna (SOLO a TEST_NOTIFY_NUMBER, NO al cliente)
                 if notification_text:
                     await send_internal_notification(notification_text)
+                
+                # Limpiar estado de recolección
+                if state.get("collecting_lead_data"):
+                    state.pop("collecting_lead_data", None)
+                    state.pop("pending_handoff", None)
                 
                 # Actualizar estado
                 state["handoff_needed"] = True
                 state["last_intent"] = intent
                 save_conversation_state(phone_from, state)
-            
-                # Marcar conversación como pendiente de humano
-                # (pero NO silenciar inmediatamente, dar HANDOFF_COOLDOWN_MINUTES)
+                
+                # ENVIAR respuesta al cliente (IMPORTANTE: esto estaba faltando)
+                tracer.response_text = response_text
+                success, _ = await send_whatsapp_message(phone_from, response_text)
+                if success:
+                    save_message(conversation_id, response_text, "luisa")
+                    logger.info(
+                        "handoff_message_sent",
+                        conversation_id=conversation_id,
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        team=decision.team.value if decision.team else None
+                    )
+                return  # IMPORTANTE: retornar aquí, no continuar al flujo normal
                 
             else:
                 # SALESBRAIN o SALES DIALOGUE MANAGER: Generar respuesta comercial
