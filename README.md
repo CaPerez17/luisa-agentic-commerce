@@ -162,11 +162,18 @@ Sastre/
 
 ## Documentation
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)**: Complete deployment guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)**: System architecture and design
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Common issues and solutions
-- **[SECURITY.md](SECURITY.md)**: Security best practices
-- **[CHANGELOG.md](CHANGELOG.md)**: Version history
+### Guías Principales
+
+- **[DEPLOYMENT_AND_CONFIGURATION.md](DEPLOYMENT_AND_CONFIGURATION.md)**: Guía consolidada de despliegue, configuración y activación en producción
+- **[DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md)**: Guía consolidada de desarrollo, implementación, diseño y pruebas
+
+### Documentación Adicional
+
+- **[DEPLOYMENT.md](DEPLOYMENT.md)**: Guía detallada de despliegue (referencia)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Arquitectura del sistema y diseño
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Solución de problemas comunes
+- **[SECURITY.md](SECURITY.md)**: Mejores prácticas de seguridad
+- **[CHANGELOG.md](CHANGELOG.md)**: Historial de versiones
 
 ## Scripts
 

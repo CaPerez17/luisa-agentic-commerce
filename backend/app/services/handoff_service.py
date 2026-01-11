@@ -42,7 +42,10 @@ from app.rules.keywords import (
     GARANTIA,
     USO_ROPA,
     USO_GORRAS,
-    USO_CALZADO
+    USO_CALZADO,
+    select_variant,
+    HANDOFF_LLAMAMOS_PASAS_MONTERIA_VARIANTES,
+    HANDOFF_LLAMAMOS_PASAS_FUERA_VARIANTES
 )
 from app.logging_config import logger
 
@@ -362,7 +365,7 @@ def _save_to_outbox(conversation_id: str, decision: HandoffDecision, notificatio
         logger.error("Error guardando en outbox", error=str(e))
 
 
-def generate_handoff_message(text: str, reason: str, priority: str, ciudad: Optional[str] = None) -> str:
+def generate_handoff_message(text: str, reason: str, priority: str, ciudad: Optional[str] = None, conversation_id: Optional[str] = None) -> str:
     """
     Genera mensaje de handoff para el cliente.
     """
@@ -374,49 +377,39 @@ def generate_handoff_message(text: str, reason: str, priority: str, ciudad: Opti
     # Handoff por impacto de negocio o servicio diferencial
     if any(kw in reason.lower() for kw in ["proyecto de negocio", "servicio diferencial", "asesoría", "instalación"]):
         if esta_en_monteria:
-            return (
-                "En este punto lo mejor es que uno de nuestros asesores te acompañe "
-                "directamente para elegir la mejor opción según tu proyecto.\n\n"
-                "¿Prefieres que te llamemos para agendar una cita con el asesor "
-                "o agendamos una visita del equipo a tu taller?"
-            )
+            # Selección determinística de variante para "te llamamos o vayamos"
+            variant_key = conversation_id if conversation_id else "default"
+            return select_variant(variant_key, HANDOFF_LLAMAMOS_PASAS_FUERA_VARIANTES)
         else:
             return (
-                "En este punto lo mejor es que uno de nuestros asesores te acompañe "
-                "directamente para elegir la mejor opción según tu proyecto.\n\n"
-                "¿Prefieres que te llamemos para agendar una cita con el asesor?"
+                "Para tu proyecto, lo mejor es que un asesor te acompañe.\n"
+                "¿Te llamamos para agendar una cita?"
             )
     
     # Handoff geográfico
     if "coordinación logística" in reason.lower() or "ubicación" in reason.lower():
         return (
-            "Para coordinar el envío e instalación a tu ubicación, "
-            "lo mejor es que uno de nuestros asesores te contacte directamente.\n\n"
-            "¿Prefieres que te llamemos para agendar la entrega e instalación?"
+            "Para coordinar el envío e instalación, lo mejor es que un asesor te contacte.\n"
+            "¿Te llamamos para agendar la entrega?"
             )
     
     # Handoff por decisión de compra
     if "cierre" in reason.lower() or "compra" in reason.lower():
         if esta_en_monteria:
-            return (
-                "Para coordinar el pago y la entrega, lo mejor es que "
-                "uno de nuestros asesores te acompañe.\n\n"
-                "¿Prefieres que te llamemos para agendar la entrega "
-                "o prefieres pasar por el almacén?"
-            )
+            # Selección determinística de variante para "te llamamos o pasas"
+            variant_key = conversation_id if conversation_id else "default"
+            return select_variant(variant_key, HANDOFF_LLAMAMOS_PASAS_MONTERIA_VARIANTES)
         else:
             return (
-                "Para coordinar el pago y el envío, lo mejor es que "
-                "uno de nuestros asesores te contacte directamente.\n\n"
-                "¿Prefieres que te llamemos para agendar el envío?"
+                "Para coordinar pago y envío, un asesor te va a contactar.\n"
+                "¿Te llamamos para agendar?"
             )
     
     # Handoff urgente
     if priority == "urgent":
         return (
-            "Esto requiere atención inmediata. "
-            "Estoy conectándote con nuestro equipo especializado.\n\n"
-            "¿Prefieres que te llamemos ahora mismo?"
+            "Esto requiere atención inmediata. Te conecto con nuestro equipo.\n"
+            "¿Te llamamos ahora mismo?"
         )
     
     # Handoff genérico

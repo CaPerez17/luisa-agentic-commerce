@@ -1,0 +1,204 @@
+{
+  "total": 8,
+  "passed": 0,
+  "failed": 8,
+  "results": [
+    {
+      "test_id": 1,
+      "name": "Saludo",
+      "message": "Hola",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833123814_506",
+        "elapsed_ms": 17.1,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "Mensaje WhatsApp procesado y respondido"
+        ],
+        "openai_usage_correct": true,
+        "intent_correct": false
+      }
+    },
+    {
+      "test_id": 2,
+      "name": "Intención Clara (Máquina Industrial)",
+      "message": "Quiero una máquina industrial para gorras",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833127116_4634",
+        "elapsed_ms": 20.0,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "Mensaje WhatsApp procesado y respondido"
+        ],
+        "intent_correct": false
+      }
+    },
+    {
+      "test_id": 3,
+      "name": "Objeción de Precio (DEBE usar OpenAI)",
+      "message": "Está muy caro, no tengo ese presupuesto",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833130419_7057",
+        "elapsed_ms": 21.5,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "llm_decision_made",
+          "LLM Adapter usado exitosamente",
+          "Mensaje WhatsApp procesado y respondido"
+        ],
+        "openai_usage_correct": false,
+        "task_type_correct": false
+      }
+    },
+    {
+      "test_id": 4,
+      "name": "Pregunta Ambigua (DEBE usar OpenAI)",
+      "message": "No sé qué máquina me conviene",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833133724_9456",
+        "elapsed_ms": 20.0,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "llm_decision_made",
+          "LLM Adapter usado exitosamente",
+          "Mensaje WhatsApp procesado y respondido"
+        ],
+        "openai_usage_correct": false,
+        "task_type_correct": false
+      }
+    },
+    {
+      "test_id": 5,
+      "name": "Caso Técnico (Ruido, Hilo se Rompe)",
+      "message": "Mi máquina hace mucho ruido y el hilo se rompe constantemente",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833137028_4281",
+        "elapsed_ms": 29.1,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "Mensaje WhatsApp procesado y respondido"
+        ],
+        "openai_usage_correct": true,
+        "intent_correct": false
+      }
+    },
+    {
+      "test_id": 6,
+      "name": "Handoff 'Sí' (FIX P0 - nunca silencio)",
+      "message": "Sí, llámenme",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833140345_1859",
+        "elapsed_ms": 20.2,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "Mensaje registrado en modo HUMAN_ACTIVE",
+          "reply_sent_in_human_active"
+        ],
+        "openai_usage_correct": true
+      }
+    },
+    {
+      "test_id": 7,
+      "name": "Follow-up 'Hola' Después de Handoff",
+      "message": "Hola",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833143643_506",
+        "elapsed_ms": 20.9,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "Mensaje registrado en modo HUMAN_ACTIVE",
+          "reply_sent_in_human_active"
+        ],
+        "openai_usage_correct": true
+      }
+    },
+    {
+      "test_id": 8,
+      "name": "Prueba de Fallback (Límite Excedido)",
+      "message": "Tengo otra objeción sobre el precio",
+      "webhook_response": {
+        "status": 404,
+        "response": {},
+        "message_id": "wamid.test_1767833146927_2644",
+        "elapsed_ms": 21.0,
+        "success": false
+      },
+      "log_events": {},
+      "validations": {
+        "webhook_ok": false,
+        "response_time_ok": true,
+        "all_logs_present": false,
+        "missing_logs": [
+          "message_received",
+          "llm_decision_made",
+          "LLM Adapter: Límite de llamadas excedido",
+          "LLM Adapter fallback usado"
+        ],
+        "openai_usage_correct": true
+      }
+    }
+  ],
+  "timestamp": "2026-01-07T19:45:49.227069"
+}

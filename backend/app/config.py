@@ -42,6 +42,10 @@ OPENAI_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "180"))
 OPENAI_MAX_INPUT_CHARS = int(os.getenv("OPENAI_MAX_INPUT_CHARS", "1200"))
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.4"))
 OPENAI_TIMEOUT_SECONDS = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "8"))
+# Límites de uso por conversación
+OPENAI_MAX_CALLS_PER_CONVERSATION = int(os.getenv("OPENAI_MAX_CALLS_PER_CONVERSATION", "4"))
+OPENAI_CONVERSATION_TTL_HOURS = int(os.getenv("OPENAI_CONVERSATION_TTL_HOURS", "24"))  # Reset contador después de TTL
+OPENAI_MAX_TOKENS_PER_CALL = int(os.getenv("OPENAI_MAX_TOKENS_PER_CALL", str(OPENAI_MAX_OUTPUT_TOKENS)))  # Límite por llamada
 OPENAI_CACHEABLE_INTENTS = os.getenv(
     "OPENAI_CACHEABLE_INTENTS", 
     "horario,direccion,envios,pagos,catalogo"

@@ -444,3 +444,59 @@ def get_all_handoff_triggers() -> Set[str]:
         URGENTE |
         PROBLEMAS
     )
+
+
+# ============================================================================
+# VARIANTES DE COPY (Selección Determinística)
+# ============================================================================
+
+SALUDO_VARIANTES = [
+    "¡Hola! 👋 Soy Luisa del Sastre.\n¿Buscas máquina familiar, industrial o repuesto?",
+    "¡Hola! 😊 Soy Luisa. ¿Te ayudo con máquinas familiares, industriales o repuestos?"
+]
+
+TRIAGE_FIRST_VARIANTES = [
+    "¡Hola! 👋 Soy Luisa del Sastre.\n¿Buscas máquina familiar, industrial o repuesto?",
+    "¡Hola! 😊 Soy Luisa. ¿Qué necesitas: máquinas, repuestos o servicio técnico?"
+]
+
+TRIAGE_RETRY_VARIANTES = [
+    "¿Es por máquinas, repuestos o servicio técnico?",
+    "¿Necesitas máquinas, repuestos o soporte?"
+]
+
+HUMAN_ACTIVE_VARIANTES = [
+    "¡Hola! 😊 Un asesor te va a contactar pronto.\n¿Quieres que pase tu nombre y barrio para que todo esté listo?",
+    "¡Hola! 👋 Un asesor te contactará pronto.\n¿Te ayudo con tu nombre y ubicación mientras tanto?"
+]
+
+HANDOFF_LLAMAMOS_PASAS_MONTERIA_VARIANTES = [
+    "Para coordinar pago y entrega, un asesor te va a acompañar.\n¿Te llamamos para agendar o prefieres pasar por el almacén?",
+    "Para coordinar pago y entrega, te acompaña un asesor.\n¿Prefieres que te llamemos o pasas por el almacén?"
+]
+
+HANDOFF_LLAMAMOS_PASAS_FUERA_VARIANTES = [
+    "Para tu proyecto, lo mejor es que un asesor te acompañe personalmente.\n¿Te llamamos para agendar cita o prefieres que vayamos a tu taller?",
+    "Para tu proyecto, lo mejor es que un asesor te acompañe.\n¿Preferimos llamarte para agendar o vamos a tu taller?"
+]
+
+
+def select_variant(conversation_id: str, variants: List[str]) -> str:
+    """
+    Selecciona una variante determinísticamente basado en el conversation_id.
+    
+    Args:
+        conversation_id: ID de la conversación (determinístico)
+        variants: Lista de variantes disponibles
+    
+    Returns:
+        Variante seleccionada (determinística para la misma conversación)
+    """
+    if not variants:
+        return ""
+    if len(variants) == 1:
+        return variants[0]
+    
+    # Hash determinístico: siempre mismo resultado para mismo conversation_id
+    hash_value = hash(conversation_id) % len(variants)
+    return variants[hash_value]

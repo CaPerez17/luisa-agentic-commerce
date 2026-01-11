@@ -14,6 +14,7 @@ from app.config import (
     OPENAI_MAX_OUTPUT_TOKENS,
     OPENAI_TEMPERATURE,
     OPENAI_TIMEOUT_SECONDS,
+    OPENAI_MAX_INPUT_CHARS,
     BASE_DIR
 )
 from app.rules.business_guardrails import (
@@ -30,6 +31,11 @@ from app.services.context_service import (
     format_history_for_prompt
 )
 from app.logging_config import logger
+from app.services.llm_adapter import (
+    get_llm_suggestion_sync,
+    LLMTaskType
+)
+from app.rules.keywords import select_variant, SALUDO_VARIANTES
 
 
 # Versión actual del prompt
@@ -355,6 +361,107 @@ def should_call_openai(intent: str, message_type: MessageType, text: str, contex
     return True
 
 
+def _determine_llm_task_type(
+    text: str,
+    intent: str,
+    context: Dict[str, Any],
+    message_type: MessageType
+) -> str:
+    """
+    Determina el tipo de tarea para el LLM Adapter según el contexto.
+    
+    Returns:
+        task_type: "copy", "explicacion", "objecion", o "consulta_compleja"
+    """
+    text_lower = text.lower()
+    
+    # Objeciones (Categoría C)
+    objection_keywords = [
+        "muy caro", "caro", "costoso", "no tengo", "no alcanza",
+        "otro lado", "más barato", "muy costoso", "presupuesto ajustado",
+        "solo estoy averiguando", "solo estoy viendo", "todavía no sé"
+    ]
+    if any(keyword in text_lower for keyword in objection_keywords):
+        return LLMTaskType.OBJECION
+    
+    # Consultas complejas / ambiguas (Categoría C)
+    ambiguous_keywords = [
+        "no sé", "no se", "ayúdame a elegir", "cuál me conviene",
+        "quiero montar", "emprendimiento", "qué necesito",
+        "qué máquinas necesito", "en qué orden", "plan", "estrategia"
+    ]
+    if any(keyword in text_lower for keyword in ambiguous_keywords):
+        return LLMTaskType.CONSULTA_COMPLEJA
+    
+    # Comparaciones o explicaciones técnicas (Categoría B)
+    comparison_keywords = [
+        "cuál es mejor", "diferencia", "comparar", "versus",
+        "explícame", "explica", "cómo funciona", "qué significa"
+    ]
+    if any(keyword in text_lower for keyword in comparison_keywords):
+        return LLMTaskType.EXPLICACION
+    
+    # Si hay productos recomendados o contexto completo (Categoría B)
+    if context.get("productos_recomendados") or context.get("has_robust_deterministic"):
+        return LLMTaskType.COPY
+    
+    # Default: Copy para redacción comercial
+    return LLMTaskType.COPY
+
+
+def _prepare_context_for_llm_adapter(
+    context: Dict[str, Any],
+    intent: str,
+    asset: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Prepara el contexto estructurado para el LLM Adapter.
+    
+    Convierte el contexto interno al formato esperado por el adapter.
+    """
+    from app.domain.business_facts import (
+        BUSINESS_HOURS, PAYMENT_METHODS, PRICE_RANGES
+    )
+    
+    # Preparar productos recomendados
+    productos_recomendados = []
+    
+    # Si hay asset seleccionado, agregarlo
+    if asset:
+        productos_recomendados.append({
+            "nombre": asset.get("title", asset.get("image_id", "máquina")),
+            "precio": asset.get("price", 0),
+            "caracteristicas": asset.get("send_when_customer_says", [])[:3] if asset.get("send_when_customer_says") else []
+        })
+    
+    # Preparar datos del negocio
+    datos_negocio = {
+        "horarios": f"{BUSINESS_HOURS.get('weekdays', 'Lunes a viernes: 9am-6pm')}, {BUSINESS_HOURS.get('saturday', 'Sábados: 9am-2pm')}",
+        "direccion": BUSINESS_HOURS.get("address", "Montería, Córdoba, Colombia"),
+        "formas_pago": PAYMENT_METHODS if PAYMENT_METHODS else ["Addi", "Sistecrédito", "Contado"]
+    }
+    
+    # Preparar contexto de conversación
+    contexto_conversacion = {
+        "intent_detectado": intent,
+        "tipo_maquina": context.get("tipo_maquina", ""),
+        "uso": context.get("uso", ""),
+        "volumen": context.get("volumen", ""),
+        "ciudad": context.get("ciudad", ""),
+        "marca_interes": context.get("marca_interes", ""),
+        "modelo_interes": context.get("modelo_interes", "")
+    }
+    
+    # Limpiar valores vacíos
+    contexto_conversacion = {k: v for k, v in contexto_conversacion.items() if v}
+    
+    return {
+        "productos_recomendados": productos_recomendados,
+        "datos_negocio": datos_negocio,
+        "contexto_conversacion": contexto_conversacion
+    }
+
+
 def ensure_next_step_question(text: str, intent: str, context: dict) -> str:
     """
     Post-procesador: Asegura que la respuesta termine con una pregunta cerrada.
@@ -389,7 +496,7 @@ def ensure_next_step_question(text: str, intent: str, context: dict) -> str:
     return text
 
 
-def _generate_fallback_response(text: str, context: dict, intent_result: dict) -> str:
+def _generate_fallback_response(text: str, context: dict, intent_result: dict, conversation_id: Optional[str] = None) -> str:
     """Genera respuesta fallback."""
     intent = intent_result.get("intent", "")
     confidence = intent_result.get("confidence", 0)
@@ -400,7 +507,9 @@ def _generate_fallback_response(text: str, context: dict, intent_result: dict) -
         elif intent == "buscar_maquina_familiar":
             return "Tenemos máquinas familiares desde $400.000. ¿La necesitas para uso en casa o para emprendimiento?"
 
-    return "¡Hola! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
+    # Selección determinística de variante de saludo
+    variant_key = conversation_id if conversation_id else "default"
+    return select_variant(variant_key, SALUDO_VARIANTES)
 
 
 def _build_decision_path(
@@ -533,12 +642,12 @@ def build_response(
 
             # Respuestas especiales para tipos específicos de mensaje
             if message_type == MessageType.EMPTY_OR_GIBBERISH:
-                result["text"] = get_response_for_message_type(message_type, text)
+                result["text"] = get_response_for_message_type(message_type, text, conversation_id)
                 tracer.decision_path = "->gibberish_handled"
                 return result
 
             if message_type == MessageType.NON_BUSINESS:
-                result["text"] = get_response_for_message_type(message_type, text)
+                result["text"] = get_response_for_message_type(message_type, text, conversation_id)
                 tracer.decision_path = "->non_business_handled"
                 return result
     
@@ -598,7 +707,8 @@ def build_response(
             if not result["text"]:
                 # Lógica especial para saludos
                 if tracer.intent == "saludo":
-                    result["text"] = "¡Hola! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
+                    # Selección determinística de variante de saludo por conversation_id
+                    result["text"] = select_variant(conversation_id, SALUDO_VARIANTES)
                 else:
                     # Determinar si se puede llamar OpenAI con gating estricto
                     can_call_openai = should_call_openai(
@@ -610,25 +720,106 @@ def build_response(
                     )
 
                     if can_call_openai:
-                        # Llamar OpenAI con límites de input
-                        text_for_openai = text[:OPENAI_MAX_INPUT_CHARS]
-                        history_for_openai = history[-6:] if history else []  # Máximo 6 turnos
-
-                        openai_response, openai_latency = generate_openai_response_sync(
-                            text_for_openai, context, history_for_openai
+                        # Determinar tipo de tarea para LLM Adapter
+                        task_type = _determine_llm_task_type(
+                            text=text,
+                            intent=tracer.intent,
+                            context=context,
+                            message_type=message_type
+                        )
+                        
+                        # Log cuando se decide usar OpenAI (antes de llamarlo)
+                        reason_for_llm_use = f"{task_type}:{tracer.intent}:{message_type.value}"
+                        logger.info(
+                            "llm_decision_made",
+                            conversation_id=conversation_id,
+                            intent=tracer.intent,
+                            task_type=task_type,
+                            reason_for_llm_use=reason_for_llm_use,
+                            gating_passed=True,
+                            gating_reason="business_consult_and_no_deterministic"
+                        )
+                        
+                        # Preparar contexto estructurado para el adapter
+                        contexto_estructurado = _prepare_context_for_llm_adapter(
+                            context=context,
+                            intent=tracer.intent,
+                            asset=result.get("asset")
+                        )
+                        
+                        # Formatear historial conversacional
+                        history_formatted = []
+                        if history:
+                            for msg in history[-6:]:  # Máximo 6 mensajes
+                                sender = msg.get("sender", "customer")
+                                content = msg.get("text", "")
+                                role = "user" if sender == "customer" else "assistant"
+                                history_formatted.append({"role": role, "content": content})
+                        
+                        # Preparar razón de uso para logging
+                        reason_for_llm_use = f"{task_type}:{tracer.intent}:{message_type.value}"
+                        
+                        # Llamar LLM Adapter (nuevo sistema) con límites
+                        suggested_reply, adapter_metadata = get_llm_suggestion_sync(
+                            task_type=task_type,
+                            user_message=text,
+                            context=contexto_estructurado,
+                            conversation_history=history_formatted,
+                            conversation_id=conversation_id,
+                            reason_for_llm_use=reason_for_llm_use
                         )
 
-                        if openai_response:
+                        # Verificar si se excedió el límite
+                        if adapter_metadata.get("limit_exceeded"):
+                            tracer.openai_called = False
+                            logger.warning(
+                                "LLM Adapter: Límite excedido, usando fallback",
+                                conversation_id=conversation_id,
+                                call_count=adapter_metadata.get("openai_call_count", 0),
+                                max_calls=adapter_metadata.get("max_calls", 4),
+                                task_type=task_type,
+                                reason_for_llm_use=adapter_metadata.get("reason_for_llm_use")
+                            )
+                            # Usar fallback ya que no se puede llamar OpenAI
+                            result["text"] = _generate_fallback_response(text, context, intent_result, conversation_id)
+                        elif suggested_reply and adapter_metadata.get("success"):
                             tracer.openai_called = True
-                            tracer.prompt_version = PROMPT_VERSION
-                            result["text"] = openai_response
+                            tracer.prompt_version = "llm_adapter_v1"
+                            result["text"] = suggested_reply
+                            
+                            # Log metadata del adapter con información de límites
+                            logger.info(
+                                "LLM Adapter usado exitosamente",
+                                conversation_id=conversation_id,
+                                task_type=task_type,
+                                latency_ms=adapter_metadata.get("latency_ms", 0),
+                                tokens_used=adapter_metadata.get("tokens_used"),
+                                fallback_used=adapter_metadata.get("fallback_used", False),
+                                openai_call_count=adapter_metadata.get("openai_call_count", 0),
+                                reason_for_llm_use=adapter_metadata.get("reason_for_llm_use")
+                            )
 
                             # Cachear si es FAQ
                             if is_cacheable_query(text, tracer.intent):
                                 cache_response(text, result["text"])
+                        elif suggested_reply and adapter_metadata.get("fallback_used"):
+                            # Usar fallback del adapter
+                            tracer.openai_called = False  # No se llamó OpenAI realmente
+                            result["text"] = suggested_reply
+                            logger.info(
+                                "LLM Adapter fallback usado",
+                                task_type=task_type,
+                                error=adapter_metadata.get("error")
+                            )
                         else:
-                            # OpenAI falló, marcar como bloqueado por error
+                            # Adapter falló completamente, marcar como error
+                            tracer.openai_called = False
                             tracer.decision_path = tracer.decision_path.replace("->openai_called_fallback", "->openai_error")
+                            logger.warning(
+                                "LLM Adapter falló completamente",
+                                task_type=task_type,
+                                error=adapter_metadata.get("error")
+                            )
                     else:
                         # Determinar por qué se bloqueó OpenAI
                         block_reason = "unknown"
@@ -645,7 +836,7 @@ def build_response(
 
                     # Si todavía no hay respuesta, usar fallback básico
                     if not result["text"]:
-                        result["text"] = _generate_fallback_response(text, context, intent_result)
+                        result["text"] = _generate_fallback_response(text, context, intent_result, conversation_id)
 
             # Paso 7: Ajustar asset si no fue incluido en respuesta final
             if result["asset"] and not asset_selected:
@@ -720,7 +911,7 @@ def _should_select_asset(intent: str, text: str, context: dict) -> bool:
     return has_product_signals or has_brand_signals or has_context_signals
 
 
-def _generate_fallback_response(text: str, context: dict, intent_result: dict) -> str:
+def _generate_fallback_response(text: str, context: dict, intent_result: dict, conversation_id: Optional[str] = None) -> str:
     """
     Genera respuesta fallback cuando no hay respuesta específica.
     """
@@ -734,8 +925,9 @@ def _generate_fallback_response(text: str, context: dict, intent_result: dict) -
         elif intent == "buscar_maquina_familiar":
             return "Tenemos máquinas familiares desde $400.000. ¿La necesitas para uso en casa o para emprendimiento?"
 
-    # Respuesta genérica
-    return "¡Hola! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
+    # Respuesta genérica con selección determinística de variante de saludo
+    variant_key = conversation_id if conversation_id else "default"
+    return select_variant(variant_key, SALUDO_VARIANTES)
 
 
 def should_call_openai(intent: str, message_type: MessageType, text: str, context: dict, cache_hit: bool) -> bool:
@@ -893,14 +1085,15 @@ def _build_decision_path(
     return "->".join(path_parts)
 
 
-def _generate_fallback_response(text: str, context: dict, intent_result: dict) -> str:
+def _generate_fallback_response(text: str, context: dict, intent_result: dict, conversation_id: Optional[str] = None) -> str:
     """Respuesta básica cuando no hay OpenAI ni reglas específicas."""
     text_lower = text.lower()
     intent = intent_result.get("intent", "")
 
-    # Saludos
+    # Saludos con selección determinística de variante
     if intent == "saludo" or any(w in text_lower for w in ["hola", "buenas"]):
-        return "¡Hola! 👋 Soy Luisa. ¿Buscas máquina familiar o industrial?"
+        variant_key = conversation_id if conversation_id else "default"
+        return select_variant(variant_key, SALUDO_VARIANTES)
 
     # Promociones
     if intent == "preguntar_promociones" or "promoción" in text_lower:

@@ -71,8 +71,10 @@ def next_action(
     # Si el mensaje es ambiguo y NO hay estado previo, hacer triage
     if is_ambiguous and stage == "discovery" and not state.get("last_intent"):
         ambiguous_turns = state.get("ambiguous_turns", 0)
+        # Usar phone_from del state como identificador determinístico si está disponible
+        conversation_id = state.get("conversation_id") or state.get("phone_from", "")
         return {
-            "reply_text": generate_triage_greeting(state, ambiguous_turns),
+            "reply_text": generate_triage_greeting(state, ambiguous_turns, conversation_id),
             "reply_assets": None,
             "state_updates": {
                 "stage": "triage",
@@ -144,8 +146,10 @@ def next_action(
     elif stage == "triage":
         # Contar turnos ambiguos consecutivos
         ambiguous_turns = state.get("ambiguous_turns", 0) + 1
+        # Usar phone_from del state como identificador determinístico si está disponible
+        conversation_id = state.get("conversation_id") or state.get("phone_from", "")
         return {
-            "reply_text": generate_triage_greeting(state, ambiguous_turns),
+            "reply_text": generate_triage_greeting(state, ambiguous_turns, conversation_id),
             "reply_assets": None,
             "state_updates": {
                 "last_question": "triage_menu",

@@ -5,7 +5,7 @@ Para WhatsApp real: no asumir que todos quieren comprar máquina.
 from typing import Dict, Any, Optional, Tuple
 import re
 
-from app.rules.keywords import normalize_text
+from app.rules.keywords import normalize_text, select_variant, TRIAGE_FIRST_VARIANTES, TRIAGE_RETRY_VARIANTES
 from app.logging_config import logger
 
 
@@ -125,7 +125,7 @@ def classify_triage_intent(text: str) -> Tuple[str, float, bool]:
     return "other", 0.3, True
 
 
-def generate_triage_greeting(state: Optional[dict] = None, ambiguous_turns: int = 0) -> str:
+def generate_triage_greeting(state: Optional[dict] = None, ambiguous_turns: int = 0, conversation_id: Optional[str] = None) -> str:
     """
     Genera el mensaje de triage para mensajes ambiguos.
     Versión humana: saludo + pregunta abierta guiada.
@@ -133,6 +133,7 @@ def generate_triage_greeting(state: Optional[dict] = None, ambiguous_turns: int 
     Args:
         state: Estado conversacional (si existe, puede retomar contexto)
         ambiguous_turns: Número de turnos ambiguos consecutivos
+        conversation_id: ID de la conversación para selección determinística de variante
     
     Returns:
         Mensaje de triage humano (sin menú numerado si es primer turno)
@@ -146,18 +147,20 @@ def generate_triage_greeting(state: Optional[dict] = None, ambiguous_turns: int 
         if last_intent in ["buy_machine", "buscar_maquina_industrial", "buscar_maquina_familiar"]:
             product_type = slots.get("product_type")
             if product_type:
-                return f"¡De una! 😊 ¿Seguimos con las {product_type}es o necesitas repuesto/soporte?"
-            return "¡De una! 😊 ¿Seguimos con las máquinas o necesitas repuesto/soporte?"
+                return f"¡Dale! 😊 ¿Seguimos con las {product_type}es o necesitas repuesto?"
+            return "¡Dale! 😊 ¿Seguimos con las máquinas o necesitas repuesto?"
     
-    # Si es el primer turno ambiguo: saludo humano + pregunta abierta
+    # Usar conversation_id o phone_from del state como identificador determinístico
+    variant_key = conversation_id if conversation_id else (state.get("phone_from", "") if state else "")
+    if not variant_key:
+        variant_key = "default"  # Fallback si no hay identificador
+    
+    # Si es el primer turno ambiguo: saludo humano + pregunta cerrada con variación
     if ambiguous_turns == 0:
-        return (
-            "¡Hola! 😊 Soy Luisa del Almacén El Sastre. "
-            "Cuéntame qué necesitas y te ayudo (máquinas, repuestos o soporte)."
-        )
+        return select_variant(variant_key, TRIAGE_FIRST_VARIANTES)
     
-    # Si lleva 2+ turnos ambiguos: ofrecer opciones en lenguaje humano
-    return "¿Es por máquinas, repuestos o soporte/garantía?"
+    # Si lleva 2+ turnos ambiguos: ofrecer opciones en lenguaje humano con variación
+    return select_variant(variant_key, TRIAGE_RETRY_VARIANTES)
 
 
 def parse_triage_response(text: str) -> Optional[str]:

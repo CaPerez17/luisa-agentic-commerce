@@ -194,6 +194,22 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        # Columnas para tracking de llamadas OpenAI
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN openai_calls_count INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Columna ya existe
+        
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN first_openai_call_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass  # Columna ya existe
+        
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN last_openai_call_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass  # Columna ya existe
+
         try:
             cursor.execute("ALTER TABLE handoffs ADD COLUMN routed_team TEXT")
         except sqlite3.OperationalError:
@@ -341,6 +357,119 @@ def set_conversation_mode(conversation_id: str, mode: str) -> None:
             SET conversation_mode = ?, mode_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE conversation_id = ?
         """, (mode, conversation_id))
+
+
+def get_openai_call_count(conversation_id: str) -> int:
+    """
+    Obtiene el número de llamadas OpenAI en esta conversación.
+    
+    Returns:
+        int: Número de llamadas OpenAI (0 si no existe conversación)
+    """
+    conversation = get_conversation(conversation_id)
+    if conversation:
+        return conversation.get("openai_calls_count", 0)
+    return 0
+
+
+def increment_openai_call_count(conversation_id: str) -> int:
+    """
+    Incrementa el contador de llamadas OpenAI para una conversación.
+    Si es la primera llamada, establece first_openai_call_at.
+    
+    Returns:
+        int: Nuevo contador de llamadas
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Verificar si es la primera llamada
+        conversation = get_conversation(conversation_id)
+        is_first_call = not conversation or conversation.get("openai_calls_count", 0) == 0
+        
+        if is_first_call:
+            cursor.execute("""
+                UPDATE conversations 
+                SET openai_calls_count = openai_calls_count + 1,
+                    first_openai_call_at = CURRENT_TIMESTAMP,
+                    last_openai_call_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE conversation_id = ?
+            """, (conversation_id,))
+        else:
+            cursor.execute("""
+                UPDATE conversations 
+                SET openai_calls_count = openai_calls_count + 1,
+                    last_openai_call_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE conversation_id = ?
+            """, (conversation_id,))
+        
+        conn.commit()
+        
+        # Retornar nuevo contador
+        new_count = get_openai_call_count(conversation_id)
+        return new_count
+
+
+def reset_openai_call_count_if_expired(conversation_id: str, ttl_hours: int) -> bool:
+    """
+    Resetea el contador de llamadas OpenAI si el TTL expiró.
+    
+    Args:
+        conversation_id: ID de la conversación
+        ttl_hours: TTL en horas (si first_openai_call_at + ttl_hours < now, reset)
+    
+    Returns:
+        bool: True si se reseteó, False si no
+    """
+    conversation = get_conversation(conversation_id)
+    if not conversation:
+        return False
+    
+    first_call_at = conversation.get("first_openai_call_at")
+    if not first_call_at:
+        return False
+    
+    try:
+        from datetime import datetime, timedelta, timezone
+        
+        # Parsear timestamp (puede ser string o datetime)
+        if isinstance(first_call_at, str):
+            # SQLite retorna strings ISO format
+            first_call_dt = datetime.fromisoformat(first_call_at.replace('Z', '+00:00'))
+        else:
+            first_call_dt = first_call_at
+        
+        # Asegurar que tiene timezone
+        if first_call_dt.tzinfo is None:
+            first_call_dt = first_call_dt.replace(tzinfo=timezone.utc)
+        
+        now_utc = datetime.now(timezone.utc)
+        elapsed = now_utc - first_call_dt
+        ttl_seconds = ttl_hours * 3600
+        
+        if elapsed.total_seconds() > ttl_seconds:
+            # Reset contador
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE conversations 
+                    SET openai_calls_count = 0,
+                        first_openai_call_at = NULL,
+                        last_openai_call_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE conversation_id = ?
+                """, (conversation_id,))
+                conn.commit()
+            return True
+        
+        return False
+    except Exception as e:
+        # Si hay error parseando, no resetear (conservador)
+        from app.logging_config import logger
+        logger.warning("Error reseteando contador OpenAI", conversation_id=conversation_id, error=str(e))
+        return False
 
 
 def get_conversation_history(conversation_id: str, limit: int = 20) -> List[Dict[str, Any]]:

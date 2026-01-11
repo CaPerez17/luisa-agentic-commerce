@@ -192,15 +192,17 @@ def is_business_related(text: str) -> Tuple[bool, str]:
     return True, f"business_{message_type.value}"
 
 
-def get_response_for_message_type(message_type: MessageType, text: str) -> str:
+def get_response_for_message_type(message_type: MessageType, text: str, conversation_id: Optional[str] = None) -> str:
     """
     Retorna la respuesta apropiada según el tipo de mensaje.
     """
     if message_type == MessageType.EMPTY_OR_GIBBERISH:
-        return "¡Dale! 😊 ¿Buscas máquina familiar, industrial o repuesto?"
+        # Selección determinística de variante de saludo
+        variant_key = conversation_id if conversation_id else "default"
+        return select_variant(variant_key, SALUDO_VARIANTES)
 
     if message_type == MessageType.NON_BUSINESS:
-        return "Hola 😊 Yo te ayudo con máquinas, repuestos, servicio técnico y asesoría del Sastre. ¿Qué necesitas sobre eso?"
+        return "¡Hola! 😊 Te ayudo con máquinas, repuestos y servicio técnico.\n¿Qué necesitas?"
 
     # Para BUSINESS_FAQ y BUSINESS_CONSULT, usar el pipeline normal
     return ""

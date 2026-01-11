@@ -160,7 +160,7 @@ echo | openssl s_client -connect luisa-agent.online:443 -servername luisa-agent.
    - Click "Verify and Save"
 
 2. **Verify Webhook:**
-   ```bash
+```bash
    curl -v "https://luisa-agent.online/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=TEST123"
    ```
    **Expected:** Status 200, Body `TEST123`

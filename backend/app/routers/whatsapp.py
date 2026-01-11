@@ -44,6 +44,7 @@ from app.services.intent_service import analyze_intent
 from app.services.handoff_service import process_handoff, generate_handoff_message
 from app.services.trace_service import trace_interaction
 from app.rules.business_guardrails import is_business_related, get_off_topic_response
+from app.rules.keywords import select_variant, HUMAN_ACTIVE_VARIANTES
 from app.logging_config import logger
 
 
@@ -353,11 +354,8 @@ async def _process_whatsapp_message(
             
             # REGLA DE ORO MVP: LUISA nunca debe quedarse muda
             # Enviar respuesta cortés indicando que un asesor revisará
-            response_text = (
-                "Hola 😊 sigo pendiente por aquí. Un asesor te va a contactar, "
-                "pero si quieres adelantarme tu nombre y el barrio donde te encuentras, "
-                "lo dejamos listo."
-            )
+            # Selección determinística de variante por conversation_id
+            response_text = select_variant(conversation_id, HUMAN_ACTIVE_VARIANTES)
             success, error_info = await send_whatsapp_message(phone_from, response_text)
             if success:
                 save_message(conversation_id, response_text, "luisa")
@@ -376,13 +374,23 @@ async def _process_whatsapp_message(
                     message_id=message_id[:20] if message_id else "unknown",
                     phone=phone_from[-4:] if phone_from else "unknown",
                     error=sanitized_error
-                )
+            )
             return
         
         # Procesar mensaje con trazabilidad
         with trace_interaction(conversation_id, "whatsapp", phone_from) as tracer:
             tracer.raw_text = text
             tracer.normalized_text = text.lower().strip()
+            
+            # Log de mensaje entrante con todos los campos requeridos
+            logger.info(
+                "message_received",
+                conversation_id=conversation_id,
+                message_id=message_id[:20] if message_id else "unknown",
+                phone=phone_from[-4:] if phone_from and len(phone_from) >= 4 else "unknown",
+                mode=mode,
+                text_preview=text[:50] if text else ""  # Solo primeros 50 caracteres
+            )
             
             # Verificar si es del negocio
             is_business, reason = is_business_related(text)
@@ -412,6 +420,9 @@ async def _process_whatsapp_message(
             
             # Obtener estado conversacional
             state = get_conversation_state(phone_from)
+            # Agregar conversation_id y phone_from al state para selección determinística de variantes
+            state["conversation_id"] = conversation_id
+            state["phone_from"] = phone_from
             
             # Verificar si requiere handoff
             from app.services.handoff_service import should_handoff as check_handoff
@@ -425,7 +436,8 @@ async def _process_whatsapp_message(
                     text, 
                     decision.reason, 
                     decision.priority.value,
-                    context.get("ciudad")
+                    context.get("ciudad"),
+                    conversation_id
                 )
                 
                 # Procesar handoff (notificación interna)
@@ -522,7 +534,9 @@ async def _process_whatsapp_message(
                     message_id=message_id[:20] if message_id else "unknown",
                     phone=phone_from[-4:],
                     intent=tracer.intent,
-                    stage=current_stage
+                    stage=current_stage,
+                    openai_used=tracer.openai_called,
+                    decision_path=tracer.decision_path
                 )
             else:
                 tracer.error = "Error enviando respuesta"
@@ -555,7 +569,7 @@ def _generate_whatsapp_response(
     
     # Saludos
     if intent == "saludo" or any(w in text_lower for w in ["hola", "buenas"]):
-        return "¡Hola! 👋 Soy Luisa del Almacén El Sastre. ¿Buscas máquina familiar o industrial?"
+        return "¡Hola! 😊 ¿En qué te puedo ayudar: máquinas, repuestos o servicio técnico?"
     
     # Promociones
     if intent == "preguntar_promociones" or "promoción" in text_lower or "oferta" in text_lower:
