@@ -82,6 +82,16 @@ TECNICO_NOTIFY_NUMBER = os.getenv("TECNICO_NOTIFY_NUMBER", "")
 TEST_NOTIFY_NUMBER = LUISA_HUMAN_NOTIFY_NUMBER
 
 # ============================================================================
+# HORARIO DE TRABAJO (Solo si se usa número personal - NO RECOMENDADO)
+# ============================================================================
+# ⚠️ ADVERTENCIA: Usar número personal como bot es RIESGOSO
+# Ver docs/deployment/NUMERO_PERSONAL_VS_NUMERO_SEPARADO.md
+BUSINESS_HOURS_START = int(os.getenv("BUSINESS_HOURS_START", "8"))  # 8am
+BUSINESS_HOURS_END = int(os.getenv("BUSINESS_HOURS_END", "21"))  # 9pm (21:00)
+BUSINESS_HOURS_NEW_CONVERSATION_CUTOFF = int(os.getenv("BUSINESS_HOURS_NEW_CONVERSATION_CUTOFF", "18"))  # 6pm - límite para nuevas conversaciones
+BUSINESS_HOURS_ENABLED = os.getenv("BUSINESS_HOURS_ENABLED", "false").lower() == "true"  # Deshabilitado por defecto
+
+# ============================================================================
 # MODO SOMBRA (Shadow Mode)
 # ============================================================================
 # Tiempo en horas que LUISA permanece silenciada después de intervención humana

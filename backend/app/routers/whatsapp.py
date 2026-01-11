@@ -344,6 +344,52 @@ async def _process_whatsapp_message(
         # Guardar mensaje del cliente
         save_message(conversation_id, text, "customer")
         
+        # ⚠️ VERIFICAR HORARIO DE TRABAJO (solo si BUSINESS_HOURS_ENABLED=true)
+        # ADVERTENCIA: Usar número personal como bot es RIESGOSO
+        # Ver: docs/deployment/NUMERO_PERSONAL_VS_NUMERO_SEPARADO.md
+        from app.services.business_hours_service import (
+            is_within_business_hours,
+            can_start_new_conversation,
+            get_out_of_hours_message
+        )
+        
+        within_hours, hours_reason = is_within_business_hours()
+        if not within_hours:
+            # Fuera de horario: obtener historial para ver si es nueva conversación
+            history_temp = get_conversation_history(conversation_id, limit=3)
+            is_new_conv = len(history_temp) <= 1  # Solo el mensaje que acabamos de guardar
+            
+            # Si es nueva conversación fuera de horario, enviar mensaje y NO procesar
+            if is_new_conv:
+                out_of_hours_msg = get_out_of_hours_message()
+                success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                if success:
+                    save_message(conversation_id, out_of_hours_msg, "luisa")
+                    logger.info(
+                        "out_of_hours_new_conversation",
+                        conversation_id=conversation_id,
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        reason=hours_reason
+                    )
+                return
+            
+            # Si es continuación de conversación existente, verificar si podemos continuar
+            can_start, start_reason = can_start_new_conversation()
+            if not can_start and "after_cutoff" in start_reason:
+                # Después de cutoff (6pm): enviar mensaje y NO procesar nuevas interacciones
+                out_of_hours_msg = get_out_of_hours_message()
+                success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                if success:
+                    save_message(conversation_id, out_of_hours_msg, "luisa")
+                    logger.info(
+                        "out_of_hours_after_cutoff",
+                        conversation_id=conversation_id,
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        reason=start_reason
+                    )
+                return
+            # Si es continuación antes de cutoff, continuar normalmente (procesar más abajo)
+        
         # Si está en modo HUMAN_ACTIVE (y NO expiró), responder cortesía mínima (REGLA DE ORO: nunca quedarse muda)
         if mode == "HUMAN_ACTIVE":
             logger.info(
