@@ -96,7 +96,45 @@ HUMAN_TTL_HOURS=12                   # Hours before reverting HUMAN_ACTIVE
 HANDOFF_COOLDOWN_MINUTES=30          # Cooldown after handoff
 ```
 
+**Silent Mode for Personal Messages:**
+```bash
+PERSONAL_MESSAGES_MODE=silent        # silent | polite (default: silent)
+ENHANCED_FILTERING_WITH_LLM=true     # Use LLM for ambiguous cases (default: true)
+```
+
+**Business Hours (Optional):**
+```bash
+BUSINESS_HOURS_ENABLED=false         # Enable working hours filter (default: false)
+BUSINESS_HOURS_START=8               # Start hour (8am)
+BUSINESS_HOURS_END=21                # End hour (9pm)
+BUSINESS_HOURS_NEW_CONVERSATION_CUTOFF=18  # Cutoff for new conversations (6pm)
+```
+
 See `.env.example` for complete configuration reference.
+
+## Features
+
+### Silent Mode for Personal Messages
+
+LUISA automatically distinguishes between business and personal messages:
+
+- **Business Messages**: Bot responds normally with full assistance
+- **Personal Messages**: Bot stays silent (Carmen can respond manually)
+- **Zero Friction**: Works automatically without configuration
+- **Enhanced Filtering**: Uses LLM (gpt-4o-mini) for ambiguous cases
+
+This is especially useful when using a personal WhatsApp number for business. See [docs/deployment/SOLUCION_NUMERO_PERSONAL_CARMEN.md](docs/deployment/SOLUCION_NUMERO_PERSONAL_CARMEN.md) for details.
+
+### Business Hours (Optional)
+
+Optional working hours filter:
+
+- **Working Hours**: 8am - 9pm (configurable)
+- **New Conversation Cutoff**: 6pm (no new conversations after this time)
+- **Message Queuing**: Messages outside hours get automatic response
+- **Continuation**: Existing conversations can continue until closing time
+
+Configure with `BUSINESS_HOURS_ENABLED=true` in `.env`.
 
 ## Architecture
 
