@@ -41,7 +41,7 @@ python main.py
 
 ### Production Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment guide.
+See [docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md](docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md) for complete deployment guide.
 
 **Quick deploy with Docker:**
 ```bash
@@ -138,7 +138,7 @@ Send Response
 - **Trace Service**: Persists every interaction for audit
 - **Asset Service**: Manages product catalog and asset serving
 
-For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For detailed architecture documentation, see [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md).
 
 ## Project Structure
 
@@ -165,13 +165,13 @@ Sastre/
 ### Guías Principales
 
 - **[DEPLOYMENT_AND_CONFIGURATION.md](DEPLOYMENT_AND_CONFIGURATION.md)**: Guía consolidada de despliegue, configuración y activación en producción
-- **[DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md)**: Guía consolidada de desarrollo, implementación, diseño y pruebas
+- **[docs/development/DEVELOPMENT_AND_TESTING.md](docs/development/DEVELOPMENT_AND_TESTING.md)**: Guía consolidada de desarrollo, implementación, diseño y pruebas
 
 ### Documentación Adicional
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)**: Guía detallada de despliegue (referencia)
-- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Arquitectura del sistema y diseño
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Solución de problemas comunes
+- **[docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md](docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md)**: Guía detallada de despliegue y configuración
+- **[docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md)**: Arquitectura del sistema y diseño
+- **[docs/development/TROUBLESHOOTING.md](docs/development/TROUBLESHOOTING.md)**: Solución de problemas comunes
 - **[SECURITY.md](SECURITY.md)**: Mejores prácticas de seguridad
 - **[CHANGELOG.md](CHANGELOG.md)**: Historial de versiones
 
@@ -230,8 +230,8 @@ MIT License (see [LICENSE](LICENSE))
 
 ## Support
 
-For deployment issues, see [DEPLOYMENT.md](DEPLOYMENT.md).  
-For troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+For deployment issues, see [docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md](docs/deployment/DEPLOYMENT_AND_CONFIGURATION.md).  
+For troubleshooting, see [docs/development/TROUBLESHOOTING.md](docs/development/TROUBLESHOOTING.md).
 
 ---
 
