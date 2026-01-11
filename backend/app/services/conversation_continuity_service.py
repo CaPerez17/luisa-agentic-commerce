@@ -1,22 +1,21 @@
 """
 Servicio de análisis de continuidad conversacional.
 
-Analiza si un saludo debería iniciar una nueva conversación o continuar una existente.
-Usa LLM para análisis de contexto cuando es necesario.
+Analiza si un mensaje debería iniciar una nueva conversación o continuar una existente.
+Detecta señales explícitas de nueva conversación y usa heurísticas de tiempo.
 """
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone, timedelta
-import asyncio
+import re
 
 from app.config import OPENAI_ENABLED
-from app.services.llm_adapter import get_llm_suggestion_sync, LLMTaskType
 from app.logging_config import logger
 
 
 # Tiempo mínimo sin actividad para considerar nueva conversación (30 minutos)
 CONVERSATION_TIMEOUT_MINUTES = 30
-# Tiempo sin actividad para usar LLM en análisis (15 minutos)
-LLM_CONTINUITY_THRESHOLD_MINUTES = 15
+# Tiempo para considerar conversación "reciente" (5 minutos)
+RECENT_CONVERSATION_MINUTES = 5
 
 
 class ContinuityDecision:
@@ -24,6 +23,47 @@ class ContinuityDecision:
     NEW_CONVERSATION = "new_conversation"
     CONTINUE_CONVERSATION = "continue_conversation"
     ASK_CLARIFICATION = "ask_clarification"
+
+
+# Frases que explícitamente indican nueva conversación
+NEW_CONVERSATION_SIGNALS = [
+    "otra conversación", "otra conversacion",
+    "tema nuevo", "nuevo tema",
+    "cambio de tema", "cambiar de tema",
+    "empezar de nuevo", "empezar de cero",
+    "otra cosa", "algo diferente", "algo distinto",
+    "no es eso", "no era eso",
+    "olvidalo", "olvídalo", "olvida eso",
+    "dejemos eso", "deja eso",
+    "quiero otra cosa", "necesito otra cosa"
+]
+
+
+def is_explicit_new_conversation(text: str) -> bool:
+    """Detecta si el texto indica explícitamente una nueva conversación."""
+    text_lower = text.lower().strip()
+    for signal in NEW_CONVERSATION_SIGNALS:
+        if signal in text_lower:
+            return True
+    return False
+
+
+def needs_continuity_analysis(text: str, intent: str) -> bool:
+    """
+    Determina si el mensaje necesita análisis de continuidad.
+    
+    Returns:
+        True si es saludo o señal explícita de nueva conversación
+    """
+    # Si es saludo, necesita análisis
+    if intent == "saludo":
+        return True
+    
+    # Si es señal explícita de nueva conversación
+    if is_explicit_new_conversation(text):
+        return True
+    
+    return False
 
 
 def analyze_conversation_continuity(
@@ -34,7 +74,7 @@ def analyze_conversation_continuity(
     conversation_id: str
 ) -> Tuple[str, str, Dict[str, Any]]:
     """
-    Analiza si un saludo debería iniciar nueva conversación o continuar existente.
+    Analiza si un mensaje debería iniciar nueva conversación o continuar existente.
     
     Args:
         text: Mensaje del usuario
@@ -57,11 +97,15 @@ def analyze_conversation_continuity(
         "stage": state.get("stage", "discovery")
     }
     
-    # Si no es saludo, siempre continuar
+    # REGLA 1: Si el usuario dice EXPLÍCITAMENTE que es otra conversación → NUEVA
+    if is_explicit_new_conversation(text):
+        return ContinuityDecision.NEW_CONVERSATION, "explicit_new_conversation", metadata
+    
+    # REGLA 2: Si no es saludo ni señal explícita, continuar normalmente
     if intent != "saludo":
         return ContinuityDecision.CONTINUE_CONVERSATION, "not_greeting", metadata
     
-    # Si no hay historial, es nueva conversación
+    # REGLA 3: Si no hay historial, es nueva conversación
     if not history or len(history) == 0:
         return ContinuityDecision.NEW_CONVERSATION, "no_history", metadata
     
@@ -74,24 +118,17 @@ def analyze_conversation_continuity(
     time_since_last_minutes = time_since_last.total_seconds() / 60
     metadata["time_since_last_minutes"] = round(time_since_last_minutes, 1)
     
-    # USAR LLM SIEMPRE para análisis de continuidad (si está habilitado)
-    if OPENAI_ENABLED:
-        return _analyze_continuity_with_llm(text, history, state, conversation_id, metadata)
-    
-    # Fallback a heurísticas solo si LLM está deshabilitado
-    # Si ha pasado mucho tiempo (>30 min), es nueva conversación
+    # REGLA 4: Si ha pasado mucho tiempo (>30 min), es nueva conversación
     if time_since_last_minutes > CONVERSATION_TIMEOUT_MINUTES:
-        return ContinuityDecision.NEW_CONVERSATION, f"timeout_no_llm_{time_since_last_minutes:.0f}min", metadata
+        return ContinuityDecision.NEW_CONVERSATION, f"timeout_{time_since_last_minutes:.0f}min", metadata
     
-    # Si ha pasado poco tiempo (<5 min), continuar conversación
-    if time_since_last_minutes < 5:
-        return ContinuityDecision.CONTINUE_CONVERSATION, f"recent_no_llm_{time_since_last_minutes:.0f}min", metadata
+    # REGLA 5: Si ha pasado poco tiempo (<5 min), continuar sin preguntar
+    if time_since_last_minutes < RECENT_CONVERSATION_MINUTES:
+        return ContinuityDecision.CONTINUE_CONVERSATION, f"recent_{time_since_last_minutes:.0f}min", metadata
     
-    # Por defecto, continuar si hay estado activo, nueva si no
-    if state.get("last_intent") or state.get("stage") not in ["discovery", "triage"]:
-        return ContinuityDecision.CONTINUE_CONVERSATION, "no_llm_has_active_state", metadata
-    else:
-        return ContinuityDecision.NEW_CONVERSATION, "no_llm_no_active_state", metadata
+    # REGLA 6: Zona gris (5-30 min) → Preguntar al usuario
+    # No usar LLM, simplemente preguntar para evitar errores
+    return ContinuityDecision.ASK_CLARIFICATION, f"ambiguous_{time_since_last_minutes:.0f}min", metadata
 
 
 def _get_last_message_time(history: List[Dict[str, Any]]) -> Optional[datetime]:
@@ -126,115 +163,6 @@ def _get_last_message_time(history: List[Dict[str, Any]]) -> Optional[datetime]:
         logger.warning("Error parseando timestamp del historial", error=str(e), timestamp=str(timestamp))
     
     return None
-
-
-def _analyze_continuity_with_llm(
-    text: str,
-    history: List[Dict[str, Any]],
-    state: Dict[str, Any],
-    conversation_id: str,
-    metadata: Dict[str, Any]
-) -> Tuple[str, str, Dict[str, Any]]:
-    """
-    Usa LLM para analizar si es nueva conversación o continuación.
-    
-    Returns:
-        Tuple[decision, reason, metadata]
-    """
-    metadata["llm_used"] = True
-    
-    try:
-        # Formatear historial reciente (últimos 8 mensajes)
-        recent_history = history[-8:] if len(history) > 8 else history
-        history_text = _format_history_for_continuity(recent_history)
-        
-        # Crear prompt para análisis de continuidad
-        context = {
-            "contexto_conversacion": {
-                "ultimo_intent": state.get("last_intent"),
-                "stage": state.get("stage", "discovery"),
-                "time_since_last_minutes": metadata["time_since_last_minutes"]
-            },
-            "datos_negocio": {
-                "horarios": "Lunes a viernes: 9am-6pm, Sábados: 9am-2pm",
-                "direccion": "Calle 34 #1-30, Montería"
-            },
-            "productos_recomendados": []
-        }
-        
-        # Crear prompt específico para continuidad
-        user_message = f"""El cliente dice: "{text}"
-
-HISTORIAL RECIENTE:
-{history_text}
-
-ESTADO ACTUAL:
-- Último intent: {state.get('last_intent', 'ninguno')}
-- Stage: {state.get('stage', 'discovery')}
-- Tiempo desde último mensaje: {metadata['time_since_last_minutes']:.1f} minutos
-
-INSTRUCCIONES:
-Analiza si este saludo debería:
-1. INICIAR NUEVA CONVERSACIÓN (si el tema anterior ya se resolvió o cambió completamente)
-2. CONTINUAR CONVERSACIÓN (si el tema anterior sigue siendo relevante)
-3. PEDIR ACLARACIÓN (si no está claro)
-
-Responde SOLO con una de estas palabras: NUEVA, CONTINUAR, o ACLARAR"""
-        
-        # Llamar LLM con prompt personalizado
-        # Nota: Usamos CONSULTA_COMPLEJA como task_type porque es análisis, no generación de texto
-        llm_response, llm_metadata = get_llm_suggestion_sync(
-            task_type=LLMTaskType.CONSULTA_COMPLEJA,
-            user_message=user_message,
-            context=context,
-            conversation_history=None,  # Ya incluimos historial en el prompt
-            conversation_id=conversation_id,
-            reason_for_llm_use="continuity_analysis"
-        )
-        
-        metadata["llm_success"] = llm_metadata.get("success", False)
-        metadata["llm_latency_ms"] = llm_metadata.get("latency_ms", 0)
-        
-        if llm_response:
-            # Parsear respuesta del LLM
-            llm_response_lower = llm_response.lower().strip()
-            if "nueva" in llm_response_lower or "new" in llm_response_lower:
-                return ContinuityDecision.NEW_CONVERSATION, "llm_analyzed_new", metadata
-            elif "continuar" in llm_response_lower or "continue" in llm_response_lower:
-                return ContinuityDecision.CONTINUE_CONVERSATION, "llm_analyzed_continue", metadata
-            elif "aclarar" in llm_response_lower or "clarify" in llm_response_lower or "ask" in llm_response_lower:
-                return ContinuityDecision.ASK_CLARIFICATION, "llm_analyzed_unclear", metadata
-        
-        # Si LLM falla, usar heurística por defecto
-        logger.warning("LLM no retornó decisión clara de continuidad", response=llm_response[:100] if llm_response else None)
-        if state.get("last_intent") or state.get("stage") not in ["discovery", "triage"]:
-            return ContinuityDecision.CONTINUE_CONVERSATION, "llm_fallback_continue", metadata
-        else:
-            return ContinuityDecision.NEW_CONVERSATION, "llm_fallback_new", metadata
-        
-    except Exception as e:
-        logger.error("Error en análisis de continuidad con LLM", error=str(e), conversation_id=conversation_id)
-        metadata["llm_error"] = str(e)
-        # Fallback: usar heurística
-        if state.get("last_intent") or state.get("stage") not in ["discovery", "triage"]:
-            return ContinuityDecision.CONTINUE_CONVERSATION, "llm_error_fallback_continue", metadata
-        else:
-            return ContinuityDecision.NEW_CONVERSATION, "llm_error_fallback_new", metadata
-
-
-def _format_history_for_continuity(history: List[Dict[str, Any]]) -> str:
-    """Formatea historial para análisis de continuidad."""
-    if not history:
-        return "Sin historial previo"
-    
-    lines = []
-    for msg in history:
-        sender = "Cliente" if msg.get("sender") == "customer" else "Luisa"
-        text = msg.get("text", "")[:100]  # Limitar longitud
-        timestamp = msg.get("timestamp", "")
-        lines.append(f"{sender}: {text}")
-    
-    return "\n".join(lines)
 
 
 def generate_clarification_message(conversation_id: str) -> str:

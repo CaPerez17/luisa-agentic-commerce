@@ -127,7 +127,7 @@ def classify_message_type(text: str) -> MessageType:
         "dolor", "medicina", "medicamento", "enfermedad", "síntoma", "sintoma", "doctor", "médico",
         "hospital", "clínica", "fiebre", "gripe", "covid", "coronavirus", "vacuna", "pastilla",
         "tableta", "inyección", "cirugía", "cirugia", "tratamiento", "diagnóstico", "diagnostico",
-        
+
         # Otros temas no relacionados
         "política", "política", "religión", "religión", "fútbol", "futbol", "deporte", "música",
         "cine", "series", "netflix", "spotify", "instagram", "facebook", "twitter", "tiktok",

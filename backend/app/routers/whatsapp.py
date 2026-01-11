@@ -424,16 +424,19 @@ async def _process_whatsapp_message(
             state["conversation_id"] = conversation_id
             state["phone_from"] = phone_from
             
-            # ANALIZAR CONTINUIDAD CONVERSACIONAL: Si es saludo, verificar si es nueva conversación
+            # ANALIZAR CONTINUIDAD CONVERSACIONAL: Si es saludo o señal de nueva conversación
             from app.services.conversation_continuity_service import (
                 analyze_conversation_continuity,
                 ContinuityDecision,
-                generate_clarification_message
+                generate_clarification_message,
+                needs_continuity_analysis
             )
             from app.models.database import reset_conversation_state
+            from app.services.triage_service import generate_triage_greeting
             
             continuity_decision = None
-            if intent == "saludo":
+            # Analizar continuidad si es saludo O si es señal explícita de nueva conversación
+            if needs_continuity_analysis(text, intent):
                 continuity_decision, continuity_reason, continuity_metadata = analyze_conversation_continuity(
                     text=text,
                     intent=intent,
@@ -448,11 +451,11 @@ async def _process_whatsapp_message(
                     decision=continuity_decision,
                     reason=continuity_reason,
                     time_since_last_minutes=continuity_metadata.get("time_since_last_minutes"),
-                    llm_used=continuity_metadata.get("llm_used", False),
-                    intent=intent
+                    intent=intent,
+                    text_preview=text[:30]
                 )
                 
-                # Si es nueva conversación, resetear estado
+                # Si es nueva conversación, resetear estado Y enviar saludo fresco
                 if continuity_decision == ContinuityDecision.NEW_CONVERSATION:
                     logger.info(
                         "resetting_conversation_state",
@@ -461,10 +464,28 @@ async def _process_whatsapp_message(
                         old_stage=state.get("stage"),
                         old_last_intent=state.get("last_intent")
                     )
+                    # Resetear estado
                     reset_conversation_state(phone_from)
                     state = get_conversation_state(phone_from)
                     state["conversation_id"] = conversation_id
                     state["phone_from"] = phone_from
+                    
+                    # ENVIAR SALUDO FRESCO (no continuar con flujo normal que usa contexto viejo)
+                    fresh_greeting = generate_triage_greeting(state, 0, conversation_id)
+                    success, _ = await send_whatsapp_message(phone_from, fresh_greeting)
+                    if success:
+                        save_message(conversation_id, fresh_greeting, "luisa")
+                        # Actualizar estado a triage
+                        state["stage"] = "triage"
+                        save_conversation_state(phone_from, state)
+                        logger.info(
+                            "fresh_greeting_sent",
+                            conversation_id=conversation_id,
+                            phone=phone_from[-4:] if phone_from else "unknown",
+                            reason=continuity_reason
+                        )
+                    return
+                    
                 # Si necesita aclaración, enviar mensaje y retornar
                 elif continuity_decision == ContinuityDecision.ASK_CLARIFICATION:
                     clarification_text = generate_clarification_message(conversation_id)
