@@ -8,10 +8,13 @@ import json
 from pathlib import Path
 
 from app.config import (
-    TEST_NOTIFY_NUMBER, 
+    LUISA_HUMAN_NOTIFY_NUMBER,
+    TECNICO_NOTIFY_NUMBER,
     OUTBOX_DIR,
     HANDOFF_COOLDOWN_MINUTES
 )
+# DEPRECATED: mantener compatibilidad
+TEST_NOTIFY_NUMBER = LUISA_HUMAN_NOTIFY_NUMBER
 from app.models.database import (
     save_handoff, 
     save_notification,
@@ -309,12 +312,18 @@ def process_handoff(
         routed_team=team.value if team else None
     )
     
+    # Determinar número de destino según el equipo
+    if team == Team.TECNICA and TECNICO_NOTIFY_NUMBER:
+        destination_number = TECNICO_NOTIFY_NUMBER
+    else:
+        destination_number = LUISA_HUMAN_NOTIFY_NUMBER
+    
     # Guardar notificación en DB
     notification_id = save_notification(
         conversation_id=conversation_id,
         team=team.value if team else "comercial",
         notification_text=notification_text,
-        destination_number=TEST_NOTIFY_NUMBER
+        destination_number=destination_number
     )
     
     # Guardar en outbox (JSON para debug/integración)
@@ -355,7 +364,7 @@ def _save_to_outbox(conversation_id: str, decision: HandoffDecision, notificatio
         "priority": decision.priority.value,
         "notification_text": notification_text,
         "timestamp": datetime.now().isoformat(),
-        "destination": TEST_NOTIFY_NUMBER
+        "destination": TECNICO_NOTIFY_NUMBER if decision.team == Team.TECNICA and TECNICO_NOTIFY_NUMBER else LUISA_HUMAN_NOTIFY_NUMBER
     }
     
     try:

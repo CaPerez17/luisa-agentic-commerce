@@ -352,29 +352,68 @@ async def _process_whatsapp_message(
                 message_id=message_id[:20] if message_id else "unknown"
             )
             
-            # REGLA DE ORO MVP: LUISA nunca debe quedarse muda
-            # Enviar respuesta cortés indicando que un asesor revisará
-            # Selección determinística de variante por conversation_id
-            response_text = select_variant(conversation_id, HUMAN_ACTIVE_VARIANTES)
-            success, error_info = await send_whatsapp_message(phone_from, response_text)
-            if success:
-                save_message(conversation_id, response_text, "luisa")
-                logger.info(
-                    "reply_sent_in_human_active",
-                    conversation_id=conversation_id,
-                    message_id=message_id[:20] if message_id else "unknown",
-                    phone=phone_from[-4:] if phone_from else "unknown"
-                )
-            else:
-                # Sanitizar error para no exponer secretos
-                sanitized_error = _sanitize_error(error_info) if error_info else "unknown"
-                logger.error(
-                    "reply_failed_in_human_active",
-                    conversation_id=conversation_id,
-                    message_id=message_id[:20] if message_id else "unknown",
-                    phone=phone_from[-4:] if phone_from else "unknown",
-                    error=sanitized_error
-            )
+            # Verificar si ya enviamos respuesta HUMAN_ACTIVE recientemente (últimos 5 minutos)
+            # para evitar repetir el mismo mensaje
+            history = get_conversation_history(conversation_id, limit=5)
+            luisa_recent = [msg for msg in history if msg.get("sender") == "luisa"]
+            
+            # Verificar si el último mensaje de LUISA es uno de HUMAN_ACTIVE_VARIANTES
+            should_respond = True
+            if luisa_recent:
+                last_luisa_text = luisa_recent[-1].get("text", "")
+                # Si el último mensaje es uno de los HUMAN_ACTIVE_VARIANTES, no repetir
+                if any(variant in last_luisa_text for variant in HUMAN_ACTIVE_VARIANTES):
+                    # Verificar tiempo (si fue hace menos de 5 minutos, no responder)
+                    last_luisa_time = luisa_recent[-1].get("timestamp")
+                    if last_luisa_time:
+                        try:
+                            from datetime import datetime, timezone, timedelta
+                            if isinstance(last_luisa_time, str):
+                                last_time = datetime.fromisoformat(last_luisa_time.replace("Z", "+00:00").replace(" ", "T"))
+                                if last_time.tzinfo is None:
+                                    last_time = last_time.replace(tzinfo=timezone.utc)
+                            else:
+                                last_time = last_luisa_time
+                                if last_time.tzinfo is None:
+                                    last_time = last_time.replace(tzinfo=timezone.utc)
+                            
+                            now_utc = datetime.now(timezone.utc)
+                            time_since = (now_utc - last_time).total_seconds() / 60
+                            
+                            if time_since < 5:  # Menos de 5 minutos
+                                should_respond = False
+                                logger.info(
+                                    "skip_repeat_human_active_response",
+                                    conversation_id=conversation_id,
+                                    minutes_since_last=round(time_since, 1)
+                                )
+                        except Exception as e:
+                            logger.warning("Error verificando tiempo de último mensaje HUMAN_ACTIVE", error=str(e))
+            
+            # REGLA DE ORO MVP: LUISA nunca debe quedarse muda (pero no repetir mensajes)
+            if should_respond:
+                # Enviar respuesta cortés indicando que un asesor revisará
+                # Selección determinística de variante por conversation_id
+                response_text = select_variant(conversation_id, HUMAN_ACTIVE_VARIANTES)
+                success, error_info = await send_whatsapp_message(phone_from, response_text)
+                if success:
+                    save_message(conversation_id, response_text, "luisa")
+                    logger.info(
+                        "reply_sent_in_human_active",
+                        conversation_id=conversation_id,
+                        message_id=message_id[:20] if message_id else "unknown",
+                        phone=phone_from[-4:] if phone_from else "unknown"
+                    )
+                else:
+                    # Sanitizar error para no exponer secretos
+                    sanitized_error = _sanitize_error(error_info) if error_info else "unknown"
+                    logger.error(
+                        "reply_failed_in_human_active",
+                        conversation_id=conversation_id,
+                        message_id=message_id[:20] if message_id else "unknown",
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        error=sanitized_error
+                    )
             return
         
         # Procesar mensaje con trazabilidad
@@ -617,9 +656,10 @@ async def _process_whatsapp_message(
                     history=history
                 )
                 
-                # Enviar notificación interna (SOLO a TEST_NOTIFY_NUMBER, NO al cliente)
+                # Enviar notificación interna según el equipo (SOLO notificaciones unidireccionales, NO al cliente)
                 if notification_text:
-                    await send_internal_notification(notification_text)
+                    team_value = decision.team.value if decision.team else "comercial"
+                    await send_internal_notification(notification_text, team=team_value)
                 
                 # Limpiar estado de recolección
                 if state.get("collecting_lead_data"):

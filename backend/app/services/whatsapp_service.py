@@ -11,8 +11,10 @@ from app.config import (
     WHATSAPP_ACCESS_TOKEN,
     WHATSAPP_PHONE_NUMBER_ID,
     WHATSAPP_API_VERSION,
-    TEST_NOTIFY_NUMBER
+    LUISA_HUMAN_NOTIFY_NUMBER,
+    TECNICO_NOTIFY_NUMBER
 )
+from app.models.schemas import Team
 from app.models.database import check_outbox_dedup
 from app.logging_config import logger
 
@@ -119,11 +121,22 @@ async def send_whatsapp_message(
     return False, "Máximo de reintentos alcanzado"
 
 
-async def send_internal_notification(notification_text: str) -> Tuple[bool, Optional[str]]:
+async def send_internal_notification(notification_text: str, team: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
-    Envía una notificación interna al número de prueba.
+    Envía una notificación interna según el equipo.
+    
+    Args:
+        notification_text: Texto de la notificación
+        team: "comercial" → LUISA humana, "tecnica" → Técnico, None → LUISA humana (default)
+    
+    El bot solo puede enviar notificaciones unidireccionales (no conversaciones).
     """
-    return await send_whatsapp_message(TEST_NOTIFY_NUMBER, notification_text)
+    if team == "tecnica" and TECNICO_NOTIFY_NUMBER:
+        destination = TECNICO_NOTIFY_NUMBER
+    else:
+        destination = LUISA_HUMAN_NOTIFY_NUMBER
+    
+    return await send_whatsapp_message(destination, notification_text)
 
 
 def parse_webhook_message(body: Dict[str, Any]) -> Optional[Dict[str, Any]]:

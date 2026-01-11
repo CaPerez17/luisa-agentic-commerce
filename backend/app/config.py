@@ -72,8 +72,14 @@ WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v18.0")
 
-# Número para notificaciones de prueba (Luisa humana)
-TEST_NOTIFY_NUMBER = os.getenv("TEST_NOTIFY_NUMBER", "+573142156486")
+# Números para notificaciones internas (solo notificaciones, no conversaciones)
+# LUISA humana recibe notificaciones comerciales
+LUISA_HUMAN_NOTIFY_NUMBER = os.getenv("LUISA_HUMAN_NOTIFY_NUMBER", os.getenv("TEST_NOTIFY_NUMBER", "+573142156486"))
+# Técnico recibe notificaciones técnicas
+TECNICO_NOTIFY_NUMBER = os.getenv("TECNICO_NOTIFY_NUMBER", "")
+
+# DEPRECATED: usar LUISA_HUMAN_NOTIFY_NUMBER
+TEST_NOTIFY_NUMBER = LUISA_HUMAN_NOTIFY_NUMBER
 
 # ============================================================================
 # MODO SOMBRA (Shadow Mode)
