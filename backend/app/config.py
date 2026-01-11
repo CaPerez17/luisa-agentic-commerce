@@ -92,6 +92,21 @@ BUSINESS_HOURS_NEW_CONVERSATION_CUTOFF = int(os.getenv("BUSINESS_HOURS_NEW_CONVE
 BUSINESS_HOURS_ENABLED = os.getenv("BUSINESS_HOURS_ENABLED", "false").lower() == "true"  # Deshabilitado por defecto
 
 # ============================================================================
+# MODO SILENCIOSO PARA MENSAJES PERSONALES
+# ============================================================================
+# Comportamiento cuando se detecta un mensaje personal (no del negocio)
+# "silent" = No responde (recomendado - el bot no interrumpe conversaciones personales)
+# "polite" = Responde con mensaje cortés indicando que es personal
+PERSONAL_MESSAGES_MODE = os.getenv("PERSONAL_MESSAGES_MODE", "silent").lower()  # silent | polite (default: silent)
+
+# ============================================================================
+# FILTRADO MEJORADO CON LLM (Opcional)
+# ============================================================================
+# Usar LLM barato (gpt-4o-mini) para casos ambiguos en filtrado de mensajes
+# Solo se usa si OPENAI_ENABLED=true y hay dudas sobre si es mensaje personal o del negocio
+ENHANCED_FILTERING_WITH_LLM = os.getenv("ENHANCED_FILTERING_WITH_LLM", "true").lower() == "true"  # Habilitado por defecto
+
+# ============================================================================
 # MODO SOMBRA (Shadow Mode)
 # ============================================================================
 # Tiempo en horas que LUISA permanece silenciada después de intervención humana

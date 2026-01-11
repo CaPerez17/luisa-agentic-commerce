@@ -347,48 +347,51 @@ async def _process_whatsapp_message(
         # ⚠️ VERIFICAR HORARIO DE TRABAJO (solo si BUSINESS_HOURS_ENABLED=true)
         # ADVERTENCIA: Usar número personal como bot es RIESGOSO
         # Ver: docs/deployment/NUMERO_PERSONAL_VS_NUMERO_SEPARADO.md
-        from app.services.business_hours_service import (
-            is_within_business_hours,
-            can_start_new_conversation,
-            get_out_of_hours_message
-        )
-        
-        within_hours, hours_reason = is_within_business_hours()
-        if not within_hours:
-            # Fuera de horario: obtener historial para ver si es nueva conversación
-            history_temp = get_conversation_history(conversation_id, limit=3)
-            is_new_conv = len(history_temp) <= 1  # Solo el mensaje que acabamos de guardar
+        # OPCIÓN 3: HORARIO + FILTRADO HÍBRIDO
+        from app.config import BUSINESS_HOURS_ENABLED
+        if BUSINESS_HOURS_ENABLED:
+            from app.services.business_hours_service import (
+                is_within_business_hours,
+                can_start_new_conversation,
+                get_out_of_hours_message
+            )
             
-            # Si es nueva conversación fuera de horario, enviar mensaje y NO procesar
-            if is_new_conv:
-                out_of_hours_msg = get_out_of_hours_message()
-                success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
-                if success:
-                    save_message(conversation_id, out_of_hours_msg, "luisa")
-                    logger.info(
-                        "out_of_hours_new_conversation",
-                        conversation_id=conversation_id,
-                        phone=phone_from[-4:] if phone_from else "unknown",
-                        reason=hours_reason
-                    )
-                return
-            
-            # Si es continuación de conversación existente, verificar si podemos continuar
-            can_start, start_reason = can_start_new_conversation()
-            if not can_start and "after_cutoff" in start_reason:
-                # Después de cutoff (6pm): enviar mensaje y NO procesar nuevas interacciones
-                out_of_hours_msg = get_out_of_hours_message()
-                success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
-                if success:
-                    save_message(conversation_id, out_of_hours_msg, "luisa")
-                    logger.info(
-                        "out_of_hours_after_cutoff",
-                        conversation_id=conversation_id,
-                        phone=phone_from[-4:] if phone_from else "unknown",
-                        reason=start_reason
-                    )
-                return
-            # Si es continuación antes de cutoff, continuar normalmente (procesar más abajo)
+            within_hours, hours_reason = is_within_business_hours()
+            if not within_hours:
+                # Fuera de horario: obtener historial para ver si es nueva conversación
+                history_temp = get_conversation_history(conversation_id, limit=3)
+                is_new_conv = len(history_temp) <= 1  # Solo el mensaje que acabamos de guardar
+                
+                # Si es nueva conversación fuera de horario, enviar mensaje y NO procesar
+                if is_new_conv:
+                    out_of_hours_msg = get_out_of_hours_message()
+                    success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                    if success:
+                        save_message(conversation_id, out_of_hours_msg, "luisa")
+                        logger.info(
+                            "out_of_hours_new_conversation",
+                            conversation_id=conversation_id,
+                            phone=phone_from[-4:] if phone_from else "unknown",
+                            reason=hours_reason
+                        )
+                    return
+                
+                # Si es continuación de conversación existente, verificar si podemos continuar
+                can_start, start_reason = can_start_new_conversation()
+                if not can_start and "after_cutoff" in start_reason:
+                    # Después de cutoff (6pm): enviar mensaje y NO procesar nuevas interacciones
+                    out_of_hours_msg = get_out_of_hours_message()
+                    success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                    if success:
+                        save_message(conversation_id, out_of_hours_msg, "luisa")
+                        logger.info(
+                            "out_of_hours_after_cutoff",
+                            conversation_id=conversation_id,
+                            phone=phone_from[-4:] if phone_from else "unknown",
+                            reason=start_reason
+                        )
+                    return
+                # Si es continuación antes de cutoff, continuar normalmente (procesar más abajo)
         
         # Si está en modo HUMAN_ACTIVE (y NO expiró), responder cortesía mínima (REGLA DE ORO: nunca quedarse muda)
         if mode == "HUMAN_ACTIVE":
@@ -477,20 +480,54 @@ async def _process_whatsapp_message(
                 text_preview=text[:50] if text else ""  # Solo primeros 50 caracteres
             )
             
-            # Verificar si es del negocio
-            is_business, reason = is_business_related(text)
+            # Verificar si es del negocio (con filtrado mejorado si está habilitado)
+            is_business_heuristic, reason_heuristic = is_business_related(text)
+            
+            # Si está habilitado el filtrado mejorado con LLM, usar para casos ambiguos
+            from app.config import ENHANCED_FILTERING_WITH_LLM
+            if ENHANCED_FILTERING_WITH_LLM:
+                from app.rules.enhanced_filtering import enhanced_is_business_related
+                is_business, reason = await enhanced_is_business_related(text, (is_business_heuristic, reason_heuristic))
+            else:
+                is_business, reason = is_business_heuristic, reason_heuristic
+            
             tracer.business_related = is_business
             
             if not is_business:
-                response_text = get_off_topic_response()
-                tracer.response_text = response_text
+                # MODO SILENCIOSO: No responder a mensajes personales
+                from app.config import PERSONAL_MESSAGES_MODE
                 
-                # Enviar respuesta
-                success, _ = await send_whatsapp_message(phone_from, response_text)
-                if success:
-                    save_message(conversation_id, response_text, "luisa")
-                
-                return
+                if PERSONAL_MESSAGES_MODE == "silent":
+                    # Modo silencioso: NO responder (Carmen ve el mensaje y responde personalmente)
+                    logger.info(
+                        "personal_message_silent",
+                        conversation_id=conversation_id,
+                        message_id=message_id[:20] if message_id else "unknown",
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        reason=reason,
+                        text_preview=text[:50]
+                    )
+                    tracer.response_text = ""  # No hay respuesta
+                    tracer.decision_path = "->personal_message_silent"
+                    return  # NO responder - modo silencioso
+                else:
+                    # Modo cortés: Responder con mensaje indicando que es personal
+                    response_text = get_off_topic_response()
+                    tracer.response_text = response_text
+                    
+                    # Enviar respuesta
+                    success, _ = await send_whatsapp_message(phone_from, response_text)
+                    if success:
+                        save_message(conversation_id, response_text, "luisa")
+                    
+                    logger.info(
+                        "personal_message_polite_response",
+                        conversation_id=conversation_id,
+                        message_id=message_id[:20] if message_id else "unknown",
+                        phone=phone_from[-4:] if phone_from else "unknown",
+                        reason=reason
+                    )
+                    return
             
             # Obtener historial
             history = get_conversation_history(conversation_id)
