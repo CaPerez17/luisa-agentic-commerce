@@ -3,7 +3,7 @@ Guardrails para determinar si un mensaje está relacionado con el negocio.
 Usa heurísticas y keywords, NO LLM, para mantener baja latencia y costo cero.
 """
 import re
-from typing import Tuple
+from typing import Tuple, Optional
 
 from app.rules.keywords import (
     normalize_text,
