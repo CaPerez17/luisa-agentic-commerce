@@ -112,6 +112,75 @@ BUSINESS_HOURS_NEW_CONVERSATION_CUTOFF=18  # Cutoff for new conversations (6pm)
 
 See `.env.example` for complete configuration reference.
 
+## Operations
+
+### Observability
+
+**Ops Snapshot Endpoint:**
+```bash
+curl http://localhost:8000/ops/snapshot | jq
+```
+
+Returns metrics for last 60 minutes:
+- `total_msgs_60m`: Total messages processed
+- `pct_personal`: % personal messages (filtering effectiveness)
+- `pct_handoff`: % handoffs (escalation rate)
+- `pct_openai`: % OpenAI calls (cost indicator)
+- `errores_count`: Error count
+- `p95_latency_ms`: 95th percentile latency
+
+**CLI Script:**
+```bash
+python backend/scripts/ops_snapshot.py
+```
+
+### Pre-Deployment Checks
+
+**Run go_no_go suite:**
+```bash
+python backend/scripts/go_no_go.py --hard-fail
+```
+
+Validates:
+- Health endpoint
+- Greeting responses
+- Non-business message filtering
+- FAQ responses (with cache)
+- Asset selection
+- Handoff flow
+- OpenAI usage (if enabled)
+
+**Hard-fail checks:** Health, greeting, non-business, FAQ (blocks deploy if fail)
+**Warning checks:** Asset, handoff, OpenAI (warns but doesn't block)
+
+### End-to-End WhatsApp Test
+
+1. **Verify webhook configured in Meta Dashboard:**
+   - URL: `https://luisa-agent.online/whatsapp/webhook`
+   - Verify Token: Must match `WHATSAPP_VERIFY_TOKEN` in `.env`
+   - Subscription: `messages` field enabled
+
+2. **Send test message:**
+   - From test number: "hola"
+   - Expected: LUISA responds with greeting
+
+3. **Verify in database:**
+   ```bash
+   docker compose exec backend sqlite3 /app/data/luisa.db "
+   SELECT classification, classification_score, response_text, whatsapp_send_success
+   FROM interaction_traces 
+   WHERE created_at > datetime('now', '-5 minutes')
+   ORDER BY id DESC LIMIT 1;
+   "
+   ```
+
+4. **Check logs:**
+   ```bash
+   docker compose logs backend | grep -E "message_received|whatsapp_send_success"
+   ```
+
+See [docs/OPERATIONS_AND_TRADEOFFS.md](docs/OPERATIONS_AND_TRADEOFFS.md) for architecture decisions and trade-offs.
+
 ## Features
 
 ### Silent Mode for Personal Messages
