@@ -89,17 +89,20 @@
 - **Checks:** Health, greeting, non-business filtering, FAQ responses
 - **Rollback:** Docker image tagging + DB backup before deploy
 
-### Filtering Dataset Skew (15 Personal / 37 Business)
+### Filtering Dataset Skew (10 Personal / 45 Business)
 
-**Why 15/37 ratio (not 25/25):**
+**Design decision:** Generic greetings in a commercial WhatsApp channel should be treated as BUSINESS (potential customer initiating contact), not PERSONAL.
+
+**Why 10/45 ratio (not 25/25):**
 - **Business priority:** LUISA's primary function is handling business inquiries. False negatives (missing business messages) are more costly than false positives (responding to personal messages).
-- **Real-world distribution:** In production, business messages likely outnumber personal messages 2:1 or 3:1, especially during business hours.
-- **Validation focus:** The dataset emphasizes precision on business classification (37 samples) to ensure we don't miss customer inquiries.
-- **Personal message coverage:** 15 personal samples cover common patterns (greetings, programming questions, casual chat) sufficient for validation.
+- **Real-world distribution:** In production, business messages significantly outnumber personal messages in a commercial channel.
+- **Generic greetings = business:** Messages like "Hola", "Buenos días", "¿Cómo estás?" sent to a business WhatsApp are treated as potential customer inquiries.
+- **Validation focus:** The dataset emphasizes precision on business classification (45 samples) to ensure we don't miss customer inquiries.
+- **Personal message criteria:** Only messages with explicit personal context (names, family, programming topics) are classified as PERSONAL.
 
 **Validation thresholds:**
 - **Precision >= 90%:** Ensures < 10% of business messages are misclassified as personal (critical for customer service)
-- **False positives <= 5%:** Acceptable trade-off - responding to occasional personal messages is less harmful than missing business inquiries
-- **Recall:** Not explicitly enforced, but precision focus naturally maintains good recall on business messages
+- **False positives <= 5:** Acceptable trade-off - responding to occasional personal messages is less harmful than missing business inquiries
+- **Recall = 100%:** All business messages are correctly classified (no false negatives)
 
-**Trade-off:** Dataset skew (15/37 ≈ 0.4 ratio) may slightly favor business classification, but this aligns with LUISA's operational priority (never miss a customer inquiry). The 15 personal samples provide sufficient coverage of edge cases for validation purposes.
+**Trade-off:** Dataset skew (10/45 ≈ 0.22 ratio) intentionally favors business classification, aligning with LUISA's operational priority: "never miss a customer inquiry". The 10 personal samples cover clear edge cases (programming help, explicit personal context) that should definitely not trigger LUISA.
