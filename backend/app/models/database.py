@@ -194,6 +194,12 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        # Columna para TTL HUMAN_ACTIVE (P0-3): mode_updated_at_epoch (INTEGER, UTC epoch)
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN mode_updated_at_epoch INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
         # Columnas para tracking de llamadas OpenAI
         try:
             cursor.execute("ALTER TABLE conversations ADD COLUMN openai_calls_count INTEGER DEFAULT 0")
@@ -253,6 +259,69 @@ def init_db():
 
         try:
             cursor.execute("ALTER TABLE interaction_traces ADD COLUMN latency_us INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
+        # Campos para hardening de envío WhatsApp (P0-2)
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN whatsapp_send_success INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN whatsapp_send_latency_ms REAL")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN whatsapp_send_error_code TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        # Campos para clasificación persistida (P0-4)
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN classification TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN is_personal INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN classification_score REAL")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN classification_reasons TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN classifier_version TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        # Campos para OpenAI Canary (P0-6)
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN openai_canary_allowed INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN openai_latency_ms REAL")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN openai_error TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE interaction_traces ADD COLUMN openai_fallback_used INTEGER")
         except sqlite3.OperationalError:
             pass
 
@@ -350,13 +419,18 @@ def get_conversation_mode(conversation_id: str) -> str:
 
 def set_conversation_mode(conversation_id: str, mode: str) -> None:
     """Establece el modo de la conversación."""
+    import time
+    epoch_now = int(time.time())
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE conversations 
-            SET conversation_mode = ?, mode_updated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            SET conversation_mode = ?, 
+                mode_updated_at = CURRENT_TIMESTAMP, 
+                mode_updated_at_epoch = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE conversation_id = ?
-        """, (mode, conversation_id))
+        """, (mode, epoch_now, conversation_id))
 
 
 def get_openai_call_count(conversation_id: str) -> int:
@@ -516,7 +590,19 @@ def save_trace(
     message_type: Optional[str] = None,
     decision_path: Optional[str] = None,
     response_len_chars: int = 0,
-    error_message: Optional[str] = None
+    error_message: Optional[str] = None,
+    whatsapp_send_success: Optional[int] = None,
+    whatsapp_send_latency_ms: Optional[float] = None,
+    whatsapp_send_error_code: Optional[str] = None,
+    classification: Optional[str] = None,
+    is_personal: Optional[int] = None,
+    classification_score: Optional[float] = None,
+    classification_reasons: Optional[str] = None,
+    classifier_version: Optional[str] = None,
+    openai_canary_allowed: Optional[int] = None,
+    openai_latency_ms: Optional[float] = None,
+    openai_error: Optional[str] = None,
+    openai_fallback_used: Optional[int] = None
 ) -> None:
     """Guarda una traza de interacción."""
     with get_db() as conn:
@@ -527,14 +613,20 @@ def save_trace(
                 raw_text, normalized_text, business_related, intent,
                 routed_team, selected_asset_id, openai_called, prompt_version,
                 cache_hit, response_text, latency_ms, latency_us, message_type,
-                decision_path, response_len_chars, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                decision_path, response_len_chars, error_message,
+                whatsapp_send_success, whatsapp_send_latency_ms, whatsapp_send_error_code,
+                classification, is_personal, classification_score, classification_reasons, classifier_version,
+                openai_canary_allowed, openai_latency_ms, openai_error, openai_fallback_used
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request_id, conversation_id, channel, customer_phone_hash,
             raw_text, normalized_text, int(business_related), intent,
             routed_team, selected_asset_id, int(openai_called), prompt_version,
             int(cache_hit), response_text, latency_ms, latency_us, message_type,
-            decision_path, response_len_chars, error_message
+            decision_path, response_len_chars, error_message,
+            whatsapp_send_success, whatsapp_send_latency_ms, whatsapp_send_error_code,
+            classification, is_personal, classification_score, classification_reasons, classifier_version,
+            openai_canary_allowed, openai_latency_ms, openai_error, openai_fallback_used
         ))
 
 

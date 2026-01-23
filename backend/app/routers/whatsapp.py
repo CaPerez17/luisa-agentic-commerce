@@ -295,9 +295,36 @@ async def _process_whatsapp_message(
         # Verificar si HUMAN_ACTIVE expiró (TTL)
         if mode == "HUMAN_ACTIVE":
             conversation = get_conversation(conversation_id)
+            mode_updated_at_epoch = conversation.get("mode_updated_at_epoch") if conversation else None
             mode_updated_at = conversation.get("mode_updated_at") if conversation else None
             
-            if mode_updated_at:
+            if mode_updated_at_epoch:
+                # Usar epoch (preferido - más robusto)
+                try:
+                    import time
+                    now_epoch = int(time.time())
+                    elapsed_seconds = now_epoch - mode_updated_at_epoch
+                    ttl_seconds = HUMAN_TTL_HOURS * 3600
+                    
+                    if elapsed_seconds > ttl_seconds:
+                        # TTL expirado: revertir a AI_ACTIVE
+                        set_conversation_mode(conversation_id, "AI_ACTIVE")
+                        mode = "AI_ACTIVE"
+                        logger.info(
+                            "mode_auto_reverted_to_ai",
+                            conversation_id=conversation_id,
+                            seconds_in_human_active=elapsed_seconds,
+                            ttl_hours=HUMAN_TTL_HOURS
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Error verificando TTL de modo (epoch)",
+                        conversation_id=conversation_id,
+                        mode_updated_at_epoch=mode_updated_at_epoch,
+                        error=str(e)
+                    )
+            elif mode_updated_at:
+                # Fallback a timestamp (parsing robusto)
                 try:
                     # Parsear timestamp (SQLite puede devolver string ISO o datetime)
                     if isinstance(mode_updated_at, str):
@@ -333,7 +360,33 @@ async def _process_whatsapp_message(
                             ttl_hours=HUMAN_TTL_HOURS
                         )
                 except Exception as e:
-                    # Si hay error parseando timestamp, mantener modo actual y loggear
+                    # Si hay error parseando timestamp, usar created_at + 24h como fallback conservador
+                    try:
+                        created_at = conversation.get("created_at")
+                        if created_at:
+                            if isinstance(created_at, str):
+                                created_time = datetime.fromisoformat(created_at.replace("Z", "+00:00").replace(" ", "T"))
+                                if created_time.tzinfo is None:
+                                    created_time = created_time.replace(tzinfo=timezone.utc)
+                            else:
+                                created_time = created_at
+                                if created_time.tzinfo is None:
+                                    created_time = created_time.replace(tzinfo=timezone.utc)
+                            
+                            now_utc = datetime.now(timezone.utc)
+                            elapsed = now_utc - created_time
+                            # Usar 24h como TTL conservador si no podemos parsear mode_updated_at
+                            if elapsed.total_seconds() > 86400:  # 24 horas
+                                set_conversation_mode(conversation_id, "AI_ACTIVE")
+                                mode = "AI_ACTIVE"
+                                logger.info(
+                                    "mode_auto_reverted_to_ai_fallback",
+                                    conversation_id=conversation_id,
+                                    reason="created_at_24h_exceeded"
+                                )
+                    except:
+                        pass
+                    
                     logger.warning(
                         "Error verificando TTL de modo",
                         conversation_id=conversation_id,
@@ -365,7 +418,12 @@ async def _process_whatsapp_message(
                 # Si es nueva conversación fuera de horario, enviar mensaje y NO procesar
                 if is_new_conv:
                     out_of_hours_msg = get_out_of_hours_message()
-                    success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        out_of_hours_msg,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, out_of_hours_msg, "luisa")
                         logger.info(
@@ -381,7 +439,12 @@ async def _process_whatsapp_message(
                 if not can_start and "after_cutoff" in start_reason:
                     # Después de cutoff (6pm): enviar mensaje y NO procesar nuevas interacciones
                     out_of_hours_msg = get_out_of_hours_message()
-                    success, _ = await send_whatsapp_message(phone_from, out_of_hours_msg)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        out_of_hours_msg,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, out_of_hours_msg, "luisa")
                         logger.info(
@@ -444,7 +507,12 @@ async def _process_whatsapp_message(
                 # Enviar respuesta cortés indicando que un asesor revisará
                 # Selección determinística de variante por conversation_id
                 response_text = select_variant(conversation_id, HUMAN_ACTIVE_VARIANTES)
-                success, error_info = await send_whatsapp_message(phone_from, response_text)
+                success, msg_id = await send_whatsapp_message(
+                    phone_from, 
+                    response_text,
+                    conversation_id=conversation_id,
+                    message_id=message_id
+                )
                 if success:
                     save_message(conversation_id, response_text, "luisa")
                     logger.info(
@@ -481,17 +549,30 @@ async def _process_whatsapp_message(
             )
             
             # Verificar si es del negocio (con filtrado mejorado si está habilitado)
-            is_business_heuristic, reason_heuristic = is_business_related(text)
+            is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic = is_business_related(text)
             
             # Si está habilitado el filtrado mejorado con LLM, usar para casos ambiguos
             from app.config import ENHANCED_FILTERING_WITH_LLM
+            import json
             if ENHANCED_FILTERING_WITH_LLM:
                 from app.rules.enhanced_filtering import enhanced_is_business_related
-                is_business, reason = await enhanced_is_business_related(text, (is_business_heuristic, reason_heuristic))
+                is_business, reason, score, reasons_list = await enhanced_is_business_related(
+                    text, 
+                    (is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic)
+                )
+                classifier_version = "v1_enhanced"
             else:
-                is_business, reason = is_business_heuristic, reason_heuristic
+                is_business, reason, score, reasons_list = is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic
+                classifier_version = "v1"
             
             tracer.business_related = is_business
+            
+            # Persistir clasificación (P0-4)
+            tracer.classification = "PERSONAL" if not is_business else "BUSINESS"
+            tracer.is_personal = int(not is_business)
+            tracer.classification_score = score
+            tracer.classification_reasons = json.dumps(reasons_list) if reasons_list else None
+            tracer.classifier_version = classifier_version
             
             if not is_business:
                 # MODO SILENCIOSO: No responder a mensajes personales
@@ -516,7 +597,12 @@ async def _process_whatsapp_message(
                     tracer.response_text = response_text
                     
                     # Enviar respuesta
-                    success, _ = await send_whatsapp_message(phone_from, response_text)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        response_text,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, response_text, "luisa")
                     
@@ -594,7 +680,12 @@ async def _process_whatsapp_message(
                     
                     # ENVIAR SALUDO FRESCO (no continuar con flujo normal que usa contexto viejo)
                     fresh_greeting = generate_triage_greeting(state, 0, conversation_id)
-                    success, _ = await send_whatsapp_message(phone_from, fresh_greeting)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        fresh_greeting,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, fresh_greeting, "luisa")
                         # Actualizar estado a triage
@@ -611,7 +702,12 @@ async def _process_whatsapp_message(
                 # Si necesita aclaración, enviar mensaje y retornar
                 elif continuity_decision == ContinuityDecision.ASK_CLARIFICATION:
                     clarification_text = generate_clarification_message(conversation_id)
-                    success, _ = await send_whatsapp_message(phone_from, clarification_text)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        clarification_text,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, clarification_text, "luisa")
                         logger.info(
@@ -680,7 +776,12 @@ async def _process_whatsapp_message(
                     # Si no se pudo extraer nombre, pedir de nuevo
                     response_text = "Por favor, comparte tu nombre para poder ayudarte mejor."
                     tracer.response_text = response_text
-                    success, _ = await send_whatsapp_message(phone_from, response_text)
+                    success, msg_id = await send_whatsapp_message(
+                        phone_from, 
+                        response_text,
+                        conversation_id=conversation_id,
+                        message_id=message_id
+                    )
                     if success:
                         save_message(conversation_id, response_text, "luisa")
                     return
@@ -825,7 +926,20 @@ async def _process_whatsapp_message(
             tracer.response_text = response_text
             
             # Enviar respuesta
-            success, _ = await send_whatsapp_message(phone_from, response_text)
+            success, msg_id = await send_whatsapp_message(
+                phone_from, 
+                response_text,
+                conversation_id=conversation_id,
+                message_id=message_id
+            )
+            
+            # Guardar resultado en tracer para persistencia
+            if success:
+                tracer.whatsapp_send_success = 1
+                # La latencia ya está en el log, pero podemos extraerla si es necesario
+            else:
+                tracer.whatsapp_send_success = 0
+                tracer.whatsapp_send_error_code = msg_id if msg_id else "unknown_error"
             
             if success:
                 save_message(conversation_id, response_text, "luisa")

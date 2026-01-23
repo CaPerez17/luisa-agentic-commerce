@@ -35,6 +35,18 @@ class InteractionTracer:
     decision_path: Optional[str] = None
     response_len_chars: int = field(default=0)
     error_message: Optional[str] = None
+    whatsapp_send_success: Optional[int] = None
+    whatsapp_send_latency_ms: Optional[float] = None
+    whatsapp_send_error_code: Optional[str] = None
+    classification: Optional[str] = None
+    is_personal: Optional[int] = None
+    classification_score: Optional[float] = None
+    classification_reasons: Optional[str] = None
+    classifier_version: Optional[str] = None
+    openai_canary_allowed: Optional[int] = None
+    openai_latency_ms: Optional[float] = None
+    openai_error: Optional[str] = None
+    openai_fallback_used: Optional[int] = None
     
     _start_time: float = field(default=0.0, repr=False)
     _latency_ms: float = field(default=0.0, repr=False)
@@ -104,7 +116,19 @@ class InteractionTracer:
                 latency_us=self._latency_us,
                 decision_path=self.decision_path,
                 response_len_chars=self.response_len_chars,
-                error_message=self.error_message
+                error_message=self.error_message,
+                whatsapp_send_success=self.whatsapp_send_success,
+                whatsapp_send_latency_ms=self.whatsapp_send_latency_ms,
+                whatsapp_send_error_code=self.whatsapp_send_error_code,
+                classification=self.classification,
+                is_personal=self.is_personal,
+                classification_score=self.classification_score,
+                classification_reasons=self.classification_reasons,
+                classifier_version=self.classifier_version,
+                openai_canary_allowed=self.openai_canary_allowed,
+                openai_latency_ms=self.openai_latency_ms,
+                openai_error=self.openai_error,
+                openai_fallback_used=self.openai_fallback_used
             )
         except Exception as e:
             # No fallar por errores de trazabilidad

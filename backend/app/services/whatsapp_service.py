@@ -5,6 +5,7 @@ import httpx
 from typing import Optional, Dict, Any, Tuple
 import json
 import asyncio
+import time
 
 from app.config import (
     WHATSAPP_ENABLED,
@@ -26,7 +27,9 @@ WHATSAPP_API_BASE = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}"
 async def send_whatsapp_message(
     to: str,
     text: str,
-    retry_count: int = 2
+    retry_count: int = 2,
+    conversation_id: Optional[str] = None,
+    message_id: Optional[str] = None
 ) -> Tuple[bool, Optional[str]]:
     """
     Envía un mensaje de WhatsApp.
@@ -35,90 +38,180 @@ async def send_whatsapp_message(
         to: Número de destino (con código de país, ej: +573142156486)
         text: Texto del mensaje
         retry_count: Número de reintentos en caso de fallo
+        conversation_id: ID de conversación (opcional, para logging)
+        message_id: ID del mensaje original (opcional, para logging)
     
     Returns:
         Tuple[success, message_id o error]
     """
-    if not WHATSAPP_ENABLED:
-        logger.warning("WhatsApp deshabilitado, mensaje no enviado", to=_mask_phone(to))
-        return False, "WhatsApp deshabilitado"
+    start_time = time.perf_counter()
+    masked_phone = _mask_phone(to)
+    error_code = None
+    final_message_id = None
     
-    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
-        logger.error("WhatsApp no configurado correctamente")
-        return False, "Configuración incompleta"
-    
-    # Limpiar número
-    phone = to.replace("+", "").replace(" ", "").replace("-", "")
-    
-    # ANTI-SPAM GUARD: Verificar deduplicación de outbox
-    if check_outbox_dedup(phone, text, ttl_seconds=120):
-        logger.info(
-            "Mensaje WhatsApp bloqueado (outbox dedup)",
-            to=_mask_phone(phone),
-            text_preview=text[:50],
-            decision_path="outgoing_dedup_skip"
-        )
-        return False, "Mensaje duplicado reciente (anti-spam)"
-    
-    url = f"{WHATSAPP_API_BASE}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-    
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone,
-        "type": "text",
-        "text": {
-            "preview_url": False,
-            "body": text
+    try:
+        if not WHATSAPP_ENABLED:
+            error_code = "whatsapp_disabled"
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            logger.error(
+                "whatsapp_send_failed",
+                conversation_id=conversation_id or "unknown",
+                message_id=message_id or "unknown",
+                to=masked_phone,
+                error_code=error_code,
+                latency_ms=latency_ms,
+                error="WhatsApp deshabilitado"
+            )
+            return False, "WhatsApp deshabilitado"
+        
+        if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+            error_code = "config_incomplete"
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            logger.error(
+                "whatsapp_send_failed",
+                conversation_id=conversation_id or "unknown",
+                message_id=message_id or "unknown",
+                to=masked_phone,
+                error_code=error_code,
+                latency_ms=latency_ms,
+                error="Configuración incompleta"
+            )
+            return False, "Configuración incompleta"
+        
+        # Limpiar número
+        phone = to.replace("+", "").replace(" ", "").replace("-", "")
+        
+        # ANTI-SPAM GUARD: Verificar deduplicación de outbox
+        if check_outbox_dedup(phone, text, ttl_seconds=120):
+            error_code = "outbox_dedup"
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            logger.info(
+                "whatsapp_send_failed",
+                conversation_id=conversation_id or "unknown",
+                message_id=message_id or "unknown",
+                to=masked_phone,
+                error_code=error_code,
+                latency_ms=latency_ms,
+                text_preview=text[:50],
+                decision_path="outgoing_dedup_skip"
+            )
+            return False, "Mensaje duplicado reciente (anti-spam)"
+        
+        url = f"{WHATSAPP_API_BASE}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+        
+        headers = {
+            "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+            "Content-Type": "application/json"
         }
-    }
-    
-    masked_phone = _mask_phone(phone)
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": phone,
+            "type": "text",
+            "text": {
+                "preview_url": False,
+                "body": text
+            }
+        }
 
-    for attempt in range(retry_count + 1):
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                response = await client.post(url, headers=headers, json=payload)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    message_id = data.get("messages", [{}])[0].get("id")
-                    logger.info(
-                        "Mensaje WhatsApp enviado",
+        for attempt in range(retry_count + 1):
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    response = await client.post(url, headers=headers, json=payload)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        final_message_id = data.get("messages", [{}])[0].get("id")
+                        latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                        logger.info(
+                            "whatsapp_send_success",
+                            conversation_id=conversation_id or "unknown",
+                            message_id=final_message_id or "unknown",
+                            to=masked_phone,
+                            latency_ms=latency_ms
+                        )
+                        return True, final_message_id
+                    else:
+                        error_data = response.json()
+                        error_msg = error_data.get("error", {}).get("message", "Error desconocido")
+                        error_code = f"http_{response.status_code}"
+                        
+                        # No reintentar en errores de validación
+                        if response.status_code in [400, 401, 403]:
+                            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                            logger.error(
+                                "whatsapp_send_failed",
+                                conversation_id=conversation_id or "unknown",
+                                message_id=message_id or "unknown",
+                                to=masked_phone,
+                                error_code=error_code,
+                                latency_ms=latency_ms,
+                                error=error_msg,
+                                attempt=attempt + 1
+                            )
+                            return False, error_msg
+                    
+            except httpx.TimeoutException:
+                error_code = "timeout"
+                if attempt == retry_count:
+                    latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                    logger.error(
+                        "whatsapp_send_failed",
+                        conversation_id=conversation_id or "unknown",
+                        message_id=message_id or "unknown",
                         to=masked_phone,
-                        message_id=message_id
-                    )
-                    return True, message_id
-                else:
-                    error_data = response.json()
-                    error_msg = error_data.get("error", {}).get("message", "Error desconocido")
-                    logger.warning(
-                        "Error enviando WhatsApp",
-                        to=masked_phone,
-                        status_code=response.status_code,
-                        error=error_msg,
+                        error_code=error_code,
+                        latency_ms=latency_ms,
                         attempt=attempt + 1
                     )
-                    
-                    # No reintentar en errores de validación
-                    if response.status_code in [400, 401, 403]:
-                        return False, error_msg
-                
-        except httpx.TimeoutException:
-            logger.warning("Timeout enviando WhatsApp", to=masked_phone, attempt=attempt + 1)
-        except Exception as e:
-            logger.error("Error inesperado enviando WhatsApp", error=str(e), attempt=attempt + 1)
+            except Exception as e:
+                error_code = "exception"
+                if attempt == retry_count:
+                    latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                    logger.error(
+                        "whatsapp_send_failed",
+                        conversation_id=conversation_id or "unknown",
+                        message_id=message_id or "unknown",
+                        to=masked_phone,
+                        error_code=error_code,
+                        latency_ms=latency_ms,
+                        error=str(e),
+                        attempt=attempt + 1
+                    )
+            
+            # Esperar antes de reintentar
+            if attempt < retry_count:
+                await asyncio.sleep(1 * (attempt + 1))
         
-        # Esperar antes de reintentar
-        if attempt < retry_count:
-            await asyncio.sleep(1 * (attempt + 1))
+        # Máximo de reintentos alcanzado
+        error_code = "max_retries"
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        logger.error(
+            "whatsapp_send_failed",
+            conversation_id=conversation_id or "unknown",
+            message_id=message_id or "unknown",
+            to=masked_phone,
+            error_code=error_code,
+            latency_ms=latency_ms,
+            error="Máximo de reintentos alcanzado"
+        )
+        return False, "Máximo de reintentos alcanzado"
     
-    return False, "Máximo de reintentos alcanzado"
+    except Exception as e:
+        # Catch-all para cualquier error no esperado
+        error_code = "unexpected_error"
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        logger.error(
+            "whatsapp_send_failed",
+            conversation_id=conversation_id or "unknown",
+            message_id=message_id or "unknown",
+            to=masked_phone,
+            error_code=error_code,
+            latency_ms=latency_ms,
+            error=str(e)
+        )
+        return False, str(e)
 
 
 async def send_internal_notification(notification_text: str, team: Optional[str] = None) -> Tuple[bool, Optional[str]]:
