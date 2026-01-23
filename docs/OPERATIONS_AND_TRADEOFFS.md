@@ -88,3 +88,18 @@
 - **Mitigation:** `go_no_go.py --hard-fail` blocks deploy if critical checks fail
 - **Checks:** Health, greeting, non-business filtering, FAQ responses
 - **Rollback:** Docker image tagging + DB backup before deploy
+
+### Filtering Dataset Skew (15 Personal / 37 Business)
+
+**Why 15/37 ratio (not 25/25):**
+- **Business priority:** LUISA's primary function is handling business inquiries. False negatives (missing business messages) are more costly than false positives (responding to personal messages).
+- **Real-world distribution:** In production, business messages likely outnumber personal messages 2:1 or 3:1, especially during business hours.
+- **Validation focus:** The dataset emphasizes precision on business classification (37 samples) to ensure we don't miss customer inquiries.
+- **Personal message coverage:** 15 personal samples cover common patterns (greetings, programming questions, casual chat) sufficient for validation.
+
+**Validation thresholds:**
+- **Precision >= 90%:** Ensures < 10% of business messages are misclassified as personal (critical for customer service)
+- **False positives <= 5%:** Acceptable trade-off - responding to occasional personal messages is less harmful than missing business inquiries
+- **Recall:** Not explicitly enforced, but precision focus naturally maintains good recall on business messages
+
+**Trade-off:** Dataset skew (15/37 ≈ 0.4 ratio) may slightly favor business classification, but this aligns with LUISA's operational priority (never miss a customer inquiry). The 15 personal samples provide sufficient coverage of edge cases for validation purposes.
