@@ -40,6 +40,7 @@ from app.services.intent_service import analyze_intent
 from app.services.handoff_service import should_handoff, generate_handoff_message
 from app.services.trace_service import create_tracer
 from app.services.cache_service import get_cache_stats
+from app.services.ops_service import get_ops_snapshot
 from app.rules.business_guardrails import is_business_related, get_off_topic_response
 from app.rules.keywords import normalize_text, contains_any, PROMOCIONES, CONFIRMACIONES
 from app.config import LUISA_API_KEY
@@ -96,6 +97,22 @@ async def list_handoffs():
 async def cache_stats():
     """Obtiene estadísticas del cache."""
     return get_cache_stats()
+
+
+@router.get("/ops/snapshot")
+async def ops_snapshot():
+    """
+    Obtiene snapshot de métricas operacionales.
+    
+    Retorna métricas de las últimas 60 minutos:
+    - total_msgs_60m: Total de mensajes procesados
+    - pct_personal: Porcentaje de mensajes personales
+    - pct_handoff: Porcentaje de handoffs
+    - pct_openai: Porcentaje de llamadas a OpenAI
+    - errores_count: Cantidad de errores
+    - p95_latency_ms: Percentil 95 de latencia
+    """
+    return get_ops_snapshot()
 
 
 @router.post("/catalog/sync")
