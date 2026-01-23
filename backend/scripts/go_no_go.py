@@ -18,6 +18,7 @@ Requisitos:
 
 from __future__ import annotations
 
+import argparse
 import os
 import sqlite3
 import sys
@@ -358,9 +359,17 @@ def run_chat_case(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Go/No-Go checks antes de deploy")
+    parser.add_argument("--hard-fail", action="store_true", default=True, help="Hard-fail si checks críticos fallan (default: True)")
+    parser.add_argument("--no-hard-fail", dest="hard_fail", action="store_false", help="No hard-fail, solo warnings")
+    args = parser.parse_args()
+    
+    hard_fail = args.hard_fail
+    
     log("🏁 Ejecutando Go/No-Go suite...")
     log(f"BASE_URL={BASE_URL}")
     log(f"DB_PATH={DB_PATH}")
+    log(f"Hard-fail: {hard_fail}")
 
     if not DB_PATH.exists():
         log("❌ DB no encontrada. Ejecuta primero `python scripts/init_db.py` y corre el servidor.")
@@ -377,113 +386,147 @@ def main() -> int:
         return 1
 
     results: List[ScenarioResult] = []
+    hard_fail_results: List[ScenarioResult] = []
+    warning_results: List[ScenarioResult] = []
 
     with httpx.Client(base_url=BASE_URL) as client:
-        # 1) Health
+        # 1) Health (HARD-FAIL)
         health_result = run_health(client)
         results.append(health_result)
+        if not health_result.ok:
+            hard_fail_results.append(health_result)
+            if hard_fail:
+                log("❌ Health check falló (HARD-FAIL)")
+                return 1
+            else:
+                log("⚠️ Health check falló; continuando con los demás escenarios.")
+        
         openai_enabled = False
         if health_result.ok:
             openai_enabled = bool(health_result.details.get("response", {}).get("modules", {}).get("openai"))
-        else:
-            log("⚠️ Health check falló; continuando con los demás escenarios.")
 
-        # 2) Saludo
-        results.append(
-            run_chat_case(client, conn, "saludo", "hola, ¿cómo estás?", validate_saludo)
-        )
+        # 2) Saludo (HARD-FAIL)
+        saludo_result = run_chat_case(client, conn, "saludo", "hola, ¿cómo estás?", validate_saludo)
+        results.append(saludo_result)
+        if not saludo_result.ok:
+            hard_fail_results.append(saludo_result)
 
-        # 3) No negocio (programación)
-        results.append(
-            run_chat_case(
-                client,
-                conn,
-                "nonbusiness",
-                "cómo hago un for en python",
-                validate_non_business,
-            )
+        # 3) No negocio (programación) (HARD-FAIL)
+        non_business_result = run_chat_case(
+            client,
+            conn,
+            "nonbusiness",
+            "cómo hago un for en python",
+            validate_non_business,
         )
+        results.append(non_business_result)
+        if not non_business_result.ok:
+            hard_fail_results.append(non_business_result)
 
-        # 4) FAQ horarios (warm)
-        results.append(
-            run_chat_case(
-                client,
-                conn,
-                "faq-horarios-1",
-                "¿cuáles son los horarios?",
-                lambda r, t, d: validate_faq(r, t, d, expect_cache_hit=False),
-            )
+        # 4) FAQ horarios (warm) (HARD-FAIL)
+        faq_result1 = run_chat_case(
+            client,
+            conn,
+            "faq-horarios-1",
+            "¿cuáles son los horarios?",
+            lambda r, t, d: validate_faq(r, t, d, expect_cache_hit=False),
         )
-        # 4b) FAQ horarios (cache hit esperado)
-        results.append(
-            run_chat_case(
-                client,
-                conn,
-                "faq-horarios-2",
-                "¿cuáles son los horarios?",
-                lambda r, t, d: validate_faq(r, t, d, expect_cache_hit=True),
-                expect_cache_hit=True,
-            )
+        results.append(faq_result1)
+        if not faq_result1.ok:
+            hard_fail_results.append(faq_result1)
+        
+        # 4b) FAQ horarios (cache hit esperado) (HARD-FAIL)
+        faq_result2 = run_chat_case(
+            client,
+            conn,
+            "faq-horarios-2",
+            "¿cuáles son los horarios?",
+            lambda r, t, d: validate_faq(r, t, d, expect_cache_hit=True),
+            expect_cache_hit=True,
         )
+        results.append(faq_result2)
+        if not faq_result2.ok:
+            hard_fail_results.append(faq_result2)
 
-        # 5) Consulta industrial con asset
-        results.append(
-            run_chat_case(
-                client,
-                conn,
-                "industrial-asset",
-                "busco una máquina industrial recta para jeans con motor ahorrador",
-                validate_asset,
-            )
+        # 5) Consulta industrial con asset (WARNING)
+        asset_result = run_chat_case(
+            client,
+            conn,
+            "industrial-asset",
+            "busco una máquina industrial recta para jeans con motor ahorrador",
+            validate_asset,
         )
+        results.append(asset_result)
+        if not asset_result.ok:
+            warning_results.append(asset_result)
 
-        # 6) Caso de escalamiento (pago realizado + ciudad)
-        results.append(
-            run_chat_case(
-                client,
-                conn,
-                "handoff-pago",
-                "ya pagué la máquina, estoy en bogota, por favor confirmen la entrega",
-                validate_handoff,
-            )
+        # 6) Caso de escalamiento (pago realizado + ciudad) (WARNING)
+        handoff_result = run_chat_case(
+            client,
+            conn,
+            "handoff-pago",
+            "ya pagué la máquina, estoy en bogota, por favor confirmen la entrega",
+            validate_handoff,
         )
+        results.append(handoff_result)
+        if not handoff_result.ok:
+            warning_results.append(handoff_result)
 
-        # 7) Caso OpenAI (solo si está habilitado)
+        # 7) Caso OpenAI (solo si está habilitado) (WARNING)
         if openai_enabled:
-            results.append(
-                run_chat_case(
-                    client,
-                    conn,
-                    "openai-consult",
-                    "tengo un taller de botas con cuero grueso y quiero optimizar la ergonomía y el flujo, ¿qué configuraciones avanzadas de máquina recomiendas?",
-                    validate_openai,
-                )
+            openai_result = run_chat_case(
+                client,
+                conn,
+                "openai-consult",
+                "tengo un taller de botas con cuero grueso y quiero optimizar la ergonomía y el flujo, ¿qué configuraciones avanzadas de máquina recomiendas?",
+                validate_openai,
             )
+            results.append(openai_result)
+            if not openai_result.ok:
+                warning_results.append(openai_result)
         else:
             log("ℹ️ OPENAI_ENABLED=false según /health; se omite prueba de OpenAI.")
 
     # Resumen final
     log("\n================ GO / NO-GO =================")
-    overall_ok = True
+    
+    # Mostrar hard-fail checks
+    if hard_fail_results:
+        log("\n🔴 HARD-FAIL CHECKS:")
+        for res in hard_fail_results:
+            log(f"  ❌ {res.name}: {res.reason}")
+            log(f"     details: {res.details}")
+    
+    # Mostrar warnings
+    if warning_results:
+        log("\n⚠️  WARNINGS:")
+        for res in warning_results:
+            log(f"  ⚠️  {res.name}: {res.reason}")
+    
+    # Mostrar todos los resultados
+    log("\n📊 TODOS LOS CHECKS:")
     for res in results:
-        status = "PASS" if res.ok else "FAIL"
-        if not res.ok:
-            overall_ok = False
-        log(f"[{status}] {res.name}: {res.reason}")
-        if not res.ok:
-            log(f"    details: {res.details}")
+        status = "✅ PASS" if res.ok else "❌ FAIL"
+        log(f"  [{status}] {res.name}: {res.reason}")
 
     log("\nRutas relevantes:")
     log(f"- Health: {BASE_URL}/health")
     log(f"- Chat:   {BASE_URL}/api/chat")
     log(f"- DB:     {DB_PATH}")
 
-    if overall_ok:
-        log("\n✅ RESULTADO: GO (todas las verificaciones pasaron)")
+    # Determinar resultado final
+    if hard_fail_results and hard_fail:
+        log(f"\n❌ RESULTADO: NO-GO ({len(hard_fail_results)} hard-fail checks fallaron)")
+        return 1
+    elif hard_fail_results:
+        log(f"\n⚠️  RESULTADO: GO con warnings ({len(hard_fail_results)} hard-fail checks fallaron pero --no-hard-fail activo)")
+        return 0
+    elif warning_results:
+        log(f"\n✅ RESULTADO: GO con warnings ({len(warning_results)} warnings)")
         return 0
     else:
-        log("\n❌ RESULTADO: NO-GO (ver fallas arriba)")
-        return 1
+        log("\n✅ RESULTADO: GO (todas las verificaciones pasaron)")
+        return 0
 
 
 if __name__ == "__main__":

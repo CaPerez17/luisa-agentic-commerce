@@ -1,4 +1,15 @@
 #!/bin/bash
+
+# Go/No-Go checks antes de deploy (P1-2)
+echo "🔍 Ejecutando Go/No-Go checks..."
+cd "$(dirname "$0")"
+python3 backend/scripts/go_no_go.py --hard-fail
+if [ $? -ne 0 ]; then
+  echo "❌ go_no_go falló. Deploy cancelado."
+  exit 1
+fi
+echo "✅ Go/No-Go checks pasaron. Continuando con deploy..."
+echo ""
 # Script de DESPLIEGUE para LUISA
 # Optimizado para VPS pequeños (512MB-1GB RAM)
 #
