@@ -5,7 +5,7 @@ Usa LLM barato (gpt-4o-mini) solo para casos donde las heurísticas
 no pueden determinar claramente si un mensaje es personal o del negocio.
 """
 import time
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import httpx
 
 from app.config import (
@@ -25,6 +25,8 @@ def is_ambiguous_message(text: str, heuristic_result: bool) -> bool:
     """
     Determina si un mensaje es ambiguo (necesita LLM para clasificar).
     
+    Optimización P1-1: Más restrictivo - solo usar LLM si score < 0.3 (muy ambiguo).
+    
     Args:
         text: Mensaje del usuario
         heuristic_result: Resultado de heurísticas (True = business, False = personal)
@@ -33,31 +35,37 @@ def is_ambiguous_message(text: str, heuristic_result: bool) -> bool:
         True si el mensaje es ambiguo y necesita LLM
     """
     text_lower = text.lower().strip()
+    words = text_lower.split()
     
-    # Casos que son claramente ambiguos:
-    # - Mensajes cortos sin contexto claro
-    # - Saludos genéricos
-    # - Mensajes que pueden ser personales o del negocio
+    # Optimización: Solo considerar ambiguos mensajes muy cortos sin contexto
+    # Reducir casos que requieren LLM a < 10%
     
-    # Si las heurísticas dicen "personal" pero el mensaje es muy corto/ambiguo
-    if not heuristic_result and len(text_lower.split()) <= 3:
-        # Ejemplos: "Hola", "Buenos días", "¿Cómo estás?"
-        ambiguous_greetings = [
+    # Si las heurísticas dicen "personal" pero el mensaje es extremadamente corto
+    if not heuristic_result and len(words) <= 2:
+        # Solo saludos muy genéricos sin contexto
+        very_ambiguous = [
             "hola", "buenos días", "buenos dias", "buenas tardes", "buenas noches",
-            "cómo estás", "como estas", "qué tal", "que tal", "bien", "ok", "okay"
+            "qué tal", "que tal"
         ]
-        if any(greeting in text_lower for greeting in ambiguous_greetings):
+        if any(greeting in text_lower for greeting in very_ambiguous):
+            # Verificar que NO tiene keywords del negocio
+            from app.rules.business_guardrails import NEGOCIO_KEYWORDS
+            has_business_keywords = any(kw in text_lower for kw in NEGOCIO_KEYWORDS)
+            if not has_business_keywords:
+                return True
+    
+    # Si las heurísticas dicen "business" pero el mensaje es extremadamente corto sin keywords
+    if heuristic_result and len(words) <= 1:
+        # Solo mensajes de una palabra que podrían ser personales
+        single_word_personal = ["gracias", "ok", "okay", "bien", "sí", "si", "no"]
+        if text_lower in single_word_personal:
             return True
     
-    # Si las heurísticas dicen "business" pero el mensaje es muy corto sin keywords claros
-    if heuristic_result and len(text_lower.split()) <= 2:
-        # Ejemplos: "Gracias", "Perfecto", "Entendido"
-        return True
-    
+    # Por defecto, no es ambiguo (confiar en heurísticas)
     return False
 
 
-async def classify_with_llm(text: str) -> Tuple[bool, str]:
+async def classify_with_llm(text: str) -> Tuple[bool, str, float, List[str]]:
     """
     Usa LLM barato para clasificar mensajes ambiguos.
     
@@ -65,9 +73,11 @@ async def classify_with_llm(text: str) -> Tuple[bool, str]:
         text: Mensaje del usuario
     
     Returns:
-        Tuple[is_business, reason]:
+        Tuple[is_business, reason, score, reasons_list]:
             - is_business: True si es del negocio, False si es personal
             - reason: Razón de la decisión
+            - score: Confianza 0.0-1.0 (0.5-0.9 para ambiguos)
+            - reasons_list: Lista de razones
     """
     if not OPENAI_ENABLED or not OPENAI_API_KEY or not ENHANCED_FILTERING_WITH_LLM:
         # Si LLM no está habilitado, retornar como business (conservador)
@@ -124,6 +134,9 @@ RESPONDE SOLO: "business" o "personal" (una sola palabra, sin explicación).
                 
                 is_business = "business" in result
                 reason = f"llm_classified_{result[:20]}"
+                # Score para LLM: 0.5-0.9 (ambiguo, pero con confianza)
+                score = 0.7 if is_business else 0.3
+                reasons_list = [reason, "llm_used"]
                 
                 logger.info(
                     "enhanced_filtering_llm_used",
@@ -132,7 +145,7 @@ RESPONDE SOLO: "business" o "personal" (una sola palabra, sin explicación).
                     latency_ms=latency_ms
                 )
                 
-                return is_business, reason
+                return is_business, reason, score, reasons_list
             
             else:
                 # Error en LLM: retornar como business (conservador)
@@ -141,7 +154,7 @@ RESPONDE SOLO: "business" o "personal" (una sola palabra, sin explicación).
                     status=response.status_code,
                     text_preview=text[:50]
                 )
-                return True, "llm_error_default_business"
+                return True, "llm_error_default_business", 0.5, ["llm_error"]
     
     except Exception as e:
         # Error en LLM: retornar como business (conservador)
@@ -150,30 +163,37 @@ RESPONDE SOLO: "business" o "personal" (una sola palabra, sin explicación).
             error=str(e)[:100],
             text_preview=text[:50]
         )
-        return True, "llm_exception_default_business"
+        return True, "llm_exception_default_business", 0.5, ["llm_exception"]
 
 
-async def enhanced_is_business_related(text: str, heuristic_result: Tuple[bool, str]) -> Tuple[bool, str]:
+async def enhanced_is_business_related(text: str, heuristic_result: Tuple[bool, str, float, List[str]]) -> Tuple[bool, str, float, List[str]]:
     """
     Versión mejorada de is_business_related que usa LLM para casos ambiguos.
     
     Args:
         text: Mensaje del usuario
-        heuristic_result: Resultado de heurísticas (is_business, reason)
+        heuristic_result: Resultado de heurísticas (is_business, reason, score, reasons_list)
     
     Returns:
-        Tuple[is_business, reason]: Resultado final
+        Tuple[is_business, reason, score, reasons_list]: Resultado final
     """
-    is_business_heuristic, reason_heuristic = heuristic_result
+    is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic = heuristic_result
     
-    # Si no es ambiguo, usar resultado de heurísticas
+    # Optimización P1-1: Solo usar LLM si score < 0.3 (muy ambiguo)
+    # Reducir % mensajes que requieren LLM a < 10%
+    if score_heuristic >= 0.3:
+        # Score suficiente, no usar LLM
+        return is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic
+    
+    # Si no es ambiguo según heurísticas, usar resultado de heurísticas
     if not is_ambiguous_message(text, is_business_heuristic):
-        return is_business_heuristic, reason_heuristic
+        return is_business_heuristic, reason_heuristic, score_heuristic, reasons_list_heuristic
     
-    # Si es ambiguo, usar LLM
-    is_business_llm, reason_llm = await classify_with_llm(text)
+    # Si es ambiguo Y score < 0.3, usar LLM
+    is_business_llm, reason_llm, score_llm, reasons_list_llm = await classify_with_llm(text)
     
     # Combinar razones
     combined_reason = f"{reason_heuristic}_ambiguous_enhanced_{reason_llm}"
+    combined_reasons_list = reasons_list_heuristic + reasons_list_llm
     
-    return is_business_llm, combined_reason
+    return is_business_llm, combined_reason, score_llm, combined_reasons_list

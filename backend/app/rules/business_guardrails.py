@@ -3,7 +3,7 @@ Guardrails para determinar si un mensaje está relacionado con el negocio.
 Usa heurísticas y keywords, NO LLM, para mantener baja latencia y costo cero.
 """
 import re
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 from app.rules.keywords import (
     normalize_text,
@@ -46,6 +46,7 @@ from app.rules.keywords import (
 
 
 # Keywords específicos del negocio El Sastre
+# Optimización P1-1: Expandir con casos comunes del dataset
 NEGOCIO_KEYWORDS = {
     # Productos
     "máquina", "maquina", "máquinas", "maquinas",
@@ -61,7 +62,16 @@ NEGOCIO_KEYWORDS = {
     # Contexto de costura
     "confección", "confeccion", "modista", "modistería",
     "taller", "producción", "produccion", "puntada", "puntadas",
-    "ojal", "ojales", "hilo", "aguja", "prensatela", "bobina"
+    "ojal", "ojales", "hilo", "aguja", "prensatela", "bobina",
+    
+    # Optimización P1-1: Agregar keywords comunes del dataset
+    "repuestos", "repuesto", "servicio técnico", "servicio tecnico",
+    "garantía", "garantia", "precio", "precios", "cuánto", "cuanto",
+    "stock", "disponibilidad", "catálogo", "catalogo", "promociones",
+    "financiación", "financiacion", "formas de pago", "horarios",
+    "ubicación", "ubicacion", "dirección", "direccion", "envíos", "envios",
+    "capacitación", "capacitacion", "asesoría", "asesoria", "fileteadora",
+    "industrial", "familiar", "gorras", "calzado", "ropa", "accesorios"
 }
 
 # Respuesta amigable cuando el mensaje está fuera del negocio
@@ -178,23 +188,59 @@ def classify_message_type(text: str) -> MessageType:
     return MessageType.BUSINESS_CONSULT
 
 
-def is_business_related(text: str) -> Tuple[bool, str]:
+def is_business_related(text: str) -> Tuple[bool, str, float, List[str]]:
     """
     Determina si el mensaje está relacionado con el negocio.
     Ahora usa classify_message_type internamente.
     
     Returns:
-        Tuple[bool, str]: (es_del_negocio, razón)
+        Tuple[bool, str, float, List[str]]: (es_del_negocio, razón, score, razones_list)
+        - is_business: True si es del negocio, False si es personal
+        - reason: Razón principal
+        - score: Confianza 0.0-1.0 (0.9-1.0 = alto, 0.5-0.9 = medio, <0.5 = bajo)
+        - reasons_list: Lista de keywords/patrones que matchearon
     """
     message_type = classify_message_type(text)
+    text_normalized = normalize_text(text)
+    reasons_list = []
+    score = 0.0
 
     if message_type == MessageType.EMPTY_OR_GIBBERISH:
-        return True, "empty_or_gibberish"  # Permitir pero tratar diferente
+        # Mensajes vacíos: score bajo pero permitir
+        score = 0.5
+        reasons_list.append("empty_or_gibberish")
+        return True, "empty_or_gibberish", score, reasons_list
 
     if message_type == MessageType.NON_BUSINESS:
-        return False, "non_business"
+        # Mensajes no del negocio: score alto (confianza alta en que NO es del negocio)
+        score = 0.95
+        reasons_list.append("non_business")
+        # Buscar keywords específicos que indican que NO es del negocio
+        if any(kw in text_normalized for kw in ["programación", "programacion", "código", "codigo", "python", "javascript"]):
+            reasons_list.append("programming_keyword")
+        return False, "non_business", score, reasons_list
 
-    return True, f"business_{message_type.value}"
+    # BUSINESS_FAQ o BUSINESS_CONSULT: calcular score basado en keywords
+    if message_type == MessageType.BUSINESS_FAQ:
+        score = 0.95
+        reasons_list.append("business_faq")
+        # Buscar keywords específicos
+        if any(kw in text_normalized for kw in HORARIOS):
+            reasons_list.append("horarios_keyword")
+        if any(kw in text_normalized for kw in UBICACION):
+            reasons_list.append("ubicacion_keyword")
+        if any(kw in text_normalized for kw in FORMAS_PAGO):
+            reasons_list.append("formas_pago_keyword")
+    else:  # BUSINESS_CONSULT
+        score = 0.9
+        reasons_list.append("business_consult")
+        # Contar keywords del negocio
+        negocio_matches = [kw for kw in NEGOCIO_KEYWORDS if kw in text_normalized]
+        if negocio_matches:
+            reasons_list.extend(negocio_matches[:5])  # Máximo 5 keywords
+            score = min(1.0, 0.9 + (len(negocio_matches) * 0.02))  # Aumentar score con más keywords
+
+    return True, f"business_{message_type.value}", score, reasons_list
 
 
 def get_response_for_message_type(message_type: MessageType, text: str, conversation_id: Optional[str] = None) -> str:
