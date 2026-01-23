@@ -745,8 +745,6 @@ async def _process_whatsapp_message(
                     state["cliente_nombre"] = extracted_name
                 
                 if extracted_location:
-                    # Intentar detectar si es ciudad o barrio
-                    from app.services.context_service import extract_context_from_history
                     # Actualizar contexto con la ubicación
                     context["ciudad"] = extracted_location
                     state["cliente_barrio"] = extracted_location
