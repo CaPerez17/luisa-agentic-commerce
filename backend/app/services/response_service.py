@@ -327,7 +327,7 @@ def try_openai_enhancement(
     return rules_response, False
 
 
-def should_call_openai(intent: str, message_type: MessageType, text: str, context: dict, cache_hit: bool) -> bool:
+def should_call_openai(intent: str, message_type: MessageType, text: str, context: dict, cache_hit: bool, conversation_id: Optional[str] = None, phone: Optional[str] = None) -> bool:
     """
     Determina si se debe llamar a OpenAI basado en reglas estrictas de gating.
 
@@ -336,9 +336,32 @@ def should_call_openai(intent: str, message_type: MessageType, text: str, contex
     - message_type == BUSINESS_CONSULT
     - intent NO está en FAQ simples
     - cache_hit == false
+    - (si OPENAI_CANARY_ALLOWLIST está configurado) conversation_id o phone está en allowlist
     """
+    from app.config import OPENAI_CANARY_ALLOWLIST
+    from app.logging_config import logger
+    
     if not OPENAI_ENABLED:
         return False
+
+    # OpenAI Canary: verificar allowlist si está configurado (P0-6)
+    if OPENAI_CANARY_ALLOWLIST:
+        is_allowed = False
+        if conversation_id and conversation_id in OPENAI_CANARY_ALLOWLIST:
+            is_allowed = True
+        elif phone:
+            phone_last4 = phone[-4:] if len(phone) >= 4 else phone
+            if phone_last4 in OPENAI_CANARY_ALLOWLIST:
+                is_allowed = True
+        
+        if not is_allowed:
+            logger.info(
+                "openai_canary_blocked",
+                conversation_id=conversation_id or "unknown",
+                phone=phone[-4:] if phone and len(phone) >= 4 else "unknown",
+                reason="not_in_allowlist"
+            )
+            return False
 
     if message_type != MessageType.BUSINESS_CONSULT:
         return False
@@ -716,7 +739,9 @@ def build_response(
                         message_type=message_type,
                         text=text,
                         context=context,
-                        cache_hit=tracer.cache_hit
+                        cache_hit=tracer.cache_hit,
+                        conversation_id=conversation_id,
+                        phone=phone_from
                     )
 
                     if can_call_openai:
@@ -769,9 +794,19 @@ def build_response(
                             reason_for_llm_use=reason_for_llm_use
                         )
 
+                        # Persistir metadatos de OpenAI Canary (P0-6) - incluso si falla
+                        from app.config import OPENAI_CANARY_ALLOWLIST
+                        if OPENAI_CANARY_ALLOWLIST:
+                            is_allowed = conversation_id in OPENAI_CANARY_ALLOWLIST or (phone_from and phone_from[-4:] in OPENAI_CANARY_ALLOWLIST)
+                            tracer.openai_canary_allowed = 1 if is_allowed else 0
+                        else:
+                            tracer.openai_canary_allowed = 1  # Si no hay allowlist, todos están permitidos
+                        
                         # Verificar si se excedió el límite
                         if adapter_metadata.get("limit_exceeded"):
                             tracer.openai_called = False
+                            tracer.openai_error = adapter_metadata.get("error", "limit_exceeded")
+                            tracer.openai_fallback_used = 1
                             logger.warning(
                                 "LLM Adapter: Límite excedido, usando fallback",
                                 conversation_id=conversation_id,
@@ -786,6 +821,18 @@ def build_response(
                             tracer.openai_called = True
                             tracer.prompt_version = "llm_adapter_v1"
                             result["text"] = suggested_reply
+                            
+                            # Persistir metadatos de OpenAI Canary (P0-6)
+                            from app.config import OPENAI_CANARY_ALLOWLIST
+                            if OPENAI_CANARY_ALLOWLIST:
+                                is_allowed = conversation_id in OPENAI_CANARY_ALLOWLIST or (phone_from and phone_from[-4:] in OPENAI_CANARY_ALLOWLIST)
+                                tracer.openai_canary_allowed = 1 if is_allowed else 0
+                            else:
+                                tracer.openai_canary_allowed = 1  # Si no hay allowlist, todos están permitidos
+                            
+                            tracer.openai_latency_ms = adapter_metadata.get("latency_ms")
+                            tracer.openai_error = adapter_metadata.get("error")
+                            tracer.openai_fallback_used = 1 if adapter_metadata.get("fallback_used") else 0
                             
                             # Log metadata del adapter con información de límites
                             logger.info(
@@ -930,7 +977,7 @@ def _generate_fallback_response(text: str, context: dict, intent_result: dict, c
     return select_variant(variant_key, SALUDO_VARIANTES)
 
 
-def should_call_openai(intent: str, message_type: MessageType, text: str, context: dict, cache_hit: bool) -> bool:
+def should_call_openai(intent: str, message_type: MessageType, text: str, context: dict, cache_hit: bool, conversation_id: Optional[str] = None, phone: Optional[str] = None) -> bool:
     """
     Determina si se debe llamar a OpenAI basado en reglas estrictas de gating.
 
@@ -940,10 +987,33 @@ def should_call_openai(intent: str, message_type: MessageType, text: str, contex
     - intent NO está en FAQ simples
     - cache_hit == false
     - y no hay respuesta determinística robusta
+    - (si OPENAI_CANARY_ALLOWLIST está configurado) conversation_id o phone está en allowlist
     """
+    from app.config import OPENAI_CANARY_ALLOWLIST
+    from app.logging_config import logger
+    
     # OpenAI debe estar habilitado
     if not OPENAI_ENABLED:
         return False
+
+    # OpenAI Canary: verificar allowlist si está configurado (P0-6)
+    if OPENAI_CANARY_ALLOWLIST:
+        is_allowed = False
+        if conversation_id and conversation_id in OPENAI_CANARY_ALLOWLIST:
+            is_allowed = True
+        elif phone:
+            phone_last4 = phone[-4:] if len(phone) >= 4 else phone
+            if phone_last4 in OPENAI_CANARY_ALLOWLIST:
+                is_allowed = True
+        
+        if not is_allowed:
+            logger.info(
+                "openai_canary_blocked",
+                conversation_id=conversation_id or "unknown",
+                phone=phone[-4:] if phone and len(phone) >= 4 else "unknown",
+                reason="not_in_allowlist"
+            )
+            return False
 
     # Solo para consultas complejas del negocio
     if message_type != MessageType.BUSINESS_CONSULT:

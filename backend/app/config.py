@@ -51,6 +51,15 @@ OPENAI_CACHEABLE_INTENTS = os.getenv(
     "horario,direccion,envios,pagos,catalogo"
 ).split(",")
 
+# OpenAI Canary: allowlist para pruebas controladas (P0-6)
+# Formato: comma-separated list de conversation_id o phone (últimos 4 dígitos)
+# Ejemplo: "wa_573142156486,test_conv_001,1234"
+OPENAI_CANARY_ALLOWLIST = [
+    item.strip() 
+    for item in os.getenv("OPENAI_CANARY_ALLOWLIST", "").split(",") 
+    if item.strip()
+]
+
 # ============================================================================
 # SALESBRAIN CONFIGURATION
 # ============================================================================
